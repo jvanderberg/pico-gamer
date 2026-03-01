@@ -28,6 +28,7 @@ export interface Sprite {
   collGroup: number; // 8-bit bitmask for collision group membership
   collMask: number; // 8-bit bitmask for collision group filter
   hitCallback: number; // VM address of hit callback, 0 = none
+  visible: boolean; // whether to draw this sprite
   angle: number; // rotation 0–255 (256 steps = 360°)
   rotSpeed: number; // angular velocity (signed, same fixed-point as vx/vy)
   _vecRaster: Uint8Array | null; // cached rasterized vector sprite (for collision)
@@ -57,6 +58,7 @@ export function createSpriteTable(count = 32): SpriteTable {
       collGroup: 0xff,
       collMask: 0xff,
       hitCallback: 0,
+      visible: true,
       angle: 0,
       rotSpeed: 0,
       _vecRaster: null,
@@ -85,6 +87,7 @@ export function resetSpriteTable(table: SpriteTable): void {
     spr.collGroup = 0xff;
     spr.collMask = 0xff;
     spr.hitCallback = 0;
+    spr.visible = true;
     spr.angle = 0;
     spr.rotSpeed = 0;
     spr._vecRaster = null;
@@ -572,7 +575,7 @@ export function drawSprites(
   fb: Framebuffer,
 ): void {
   for (const spr of table) {
-    if (!spr.active) continue;
+    if (!spr.active || !spr.visible) continue;
     if (spr.flags & 4) {
       drawVectorSprite(fb, spr, mem);
       continue;

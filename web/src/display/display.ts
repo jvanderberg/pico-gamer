@@ -224,7 +224,7 @@ export function drawSpriteRotated(
   }
 }
 
-/** Blit an arbitrary w×h 1-bit region from VM memory. */
+/** Blit an arbitrary w×h 1-bit region from VM memory (row-aligned, same as sprites). */
 export function blit(
   fb: Framebuffer,
   srcData: Uint8Array,
@@ -233,16 +233,15 @@ export function blit(
   w: number,
   h: number,
 ): void {
-  let bitIdx = 0;
+  const bytesPerRow = Math.ceil(w / 8);
   for (let row = 0; row < h; row++) {
     for (let col = 0; col < w; col++) {
-      const byteIdx = bitIdx >>> 3;
-      const bitOff = 7 - (bitIdx & 7);
+      const byteIdx = row * bytesPerRow + (col >>> 3);
+      const bitOff = 7 - (col & 7);
       const bit = (srcData[byteIdx]! >>> bitOff) & 1;
       if (bit) {
         setPixel(fb, x + col, y + row, 1);
       }
-      bitIdx++;
     }
   }
 }

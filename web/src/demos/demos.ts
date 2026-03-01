@@ -1,11 +1,13 @@
 export interface Demo {
   name: string;
   source: string;
+  lang: "asm" | "basic";
 }
 
 export const DEMOS: Demo[] = [
   {
     name: "Bouncing Dot",
+    lang: "asm",
     source: `; Bouncing dot — a single 1x1 pixel sprite with bounce edge mode
 ; The engine handles movement and bouncing automatically
 
@@ -34,6 +36,7 @@ loop:
   },
   {
     name: "Hello Rectangles",
+    lang: "asm",
     source: `; Draw some rectangles to test drawing syscalls
 
   ; Draw a border rectangle
@@ -86,6 +89,7 @@ loop:
   },
   {
     name: "Managed Sprites",
+    lang: "asm",
     source: `; Managed Sprites — collision groups, detect-only & hit callbacks
 ; Two visible wall barriers; sprites with different collision groups.
 ;
@@ -297,6 +301,7 @@ loop:
   },
   {
     name: "Input Test",
+    lang: "asm",
     source: `; Move a 4x4 block with arrow keys / WASD
 ; 0xD000 = x, 0xD002 = y
 
@@ -368,6 +373,7 @@ not_right:
   },
   {
     name: "Asteroids",
+    lang: "asm",
     source: `; ── Asteroids ─────────────────────────────────────────────────────
 ; Ship rotates with encoder, thrusts with BTN, wraps at screen edges.
 ; Fire bullets with ENC_BTN; bullets destroy asteroids.
@@ -1559,6 +1565,470 @@ go_loop:
 
 go_restart:
   JMP start
+`,
+  },
+  {
+    name: "BASIC: Asteroids",
+    lang: "basic",
+    source: `' ── Asteroids ─────────────────────────────────────────────────────
+' Ship rotates with encoder, thrusts with BTN, wraps at screen edges.
+' Fire bullets with ENC_BTN; bullets destroy asteroids.
+' Large→2 medium, medium→2 small, small→gone.
+
+' ── Graphics DATA ─────────────────────────────────────────────────
+' Ship vector data (triangle outline, 3 segments in 4.4 signed fixed-point)
+DATA ship_vecs, 3, $00,$D0,$E0,$20, $E0,$20,$20,$20, $20,$20,$00,$D0
+
+' Bullet bitmap (2x2 filled square)
+DATA bullet_bmp, $C0, $C0
+
+' Asteroid vector data
+' Large (5 segments, ~15x15)
+DATA ast_large, 5, $00,$90,$60,$E0, $60,$E0,$50,$50, $50,$50,$B0,$50, $B0,$50,$A0,$E0, $A0,$E0,$00,$90
+' Medium (5 segments, ~9x9)
+DATA ast_med, 5, $00,$C0,$40,$F0, $40,$F0,$30,$30, $30,$30,$D0,$30, $D0,$30,$C0,$F0, $C0,$F0,$00,$C0
+' Small (4 segments, ~5x5)
+DATA ast_small, 4, $00,$E0,$20,$00, $20,$00,$00,$20, $00,$20,$E0,$00, $E0,$00,$00,$E0
+
+' Ship icon for lives HUD (5x5 flat-packed)
+DATA ship_icon, $22, $95, $1F, $80
+
+' ── Array for asteroid sizes (slots 5-31 = 27 entries) ────────────
+DIM sizes(27)
+
+' ══════════════════════════════════════════════════════════════════
+' Subroutines
+' ══════════════════════════════════════════════════════════════════
+
+SUB init_game()
+  ship_vx = 0
+  ship_vy = 0
+  cooldown = 0
+  game_state = 0
+  ast_count = 0
+  invincible = 0
+  next_bullet = 1
+  lives = 3
+  score = 0
+  wave = 0
+
+  SPRITE 0, ship_vecs, 7, 7, 62, 30, SPR_VECTOR, 0, 0, EDGE_WRAP
+  SPR_GROUP 0, 1, 2
+  SPR_COLL 0, COLL_DETECT
+
+  FOR i = 0 TO 26
+    sizes(i) = 0
+  NEXT
+  spawn_wave
+END SUB
+
+SUB check_collisions()
+  ' Check if ship was hit by asteroid (skip if invincible)
+  IF invincible = 0 THEN
+    hit_result = SPR_HIT(0)
+    IF hit_result AND 4 THEN
+      lives = lives - 1
+      IF lives = 0 THEN
+        game_state = 1
+      ELSE
+        ' Respawn ship
+        SPR_POS 0, 62, 30
+        SPR_VEL 0, 0, 0
+        ship_vx = 0
+        ship_vy = 0
+        SPR_ROT 0, 0, 0
+        invincible = 120
+      END IF
+    END IF
+  END IF
+
+  ' Scan asteroid slots 5-31 for bullet hits
+  FOR slot = 5 TO 31
+    IF sizes(slot - 5) <> 0 THEN
+      hit_result = SPR_HIT(slot)
+      IF hit_result AND 4 THEN
+        ' Verify collider is a bullet (slot 1-4)
+        hit_index = hit_result SHR 8
+        IF hit_index >= 1 THEN
+          IF hit_index < 5 THEN
+            ' Hit! Get position before destroying
+            ax, ay = SPR_GET(slot)
+            old_size = sizes(slot - 5)
+
+            ' Clear size and destroy sprite
+            sizes(slot - 5) = 0
+            SPR_OFF slot
+            ast_count = ast_count - 1
+
+            ' Add score
+            IF old_size = 1 THEN
+              score = score + 100
+            ELSEIF old_size = 2 THEN
+              score = score + 50
+            ELSE
+              score = score + 25
+            END IF
+
+            ' Split if not small (size < 3)
+            IF old_size < 3 THEN
+              spawn_child old_size + 1, ax - 3, ay
+              spawn_child old_size + 1, ax + 3, ay
+            END IF
+          END IF
+        END IF
+      END IF
+    END IF
+  NEXT
+END SUB
+
+SUB spawn_child(sc_size, sc_x, sc_y)
+  ' Find free slot 5-31
+  FOR fslot = 5 TO 31
+    IF sizes(fslot - 5) = 0 THEN
+      ' Pick vector addr + bbox by size
+      IF sc_size = 1 THEN
+        sc_addr = ast_large
+        sc_bbox = 15
+      ELSEIF sc_size = 2 THEN
+        sc_addr = ast_med
+        sc_bbox = 9
+      ELSE
+        sc_addr = ast_small
+        sc_bbox = 5
+      END IF
+
+      ' Random velocity -18..18
+      rvx = (RAND() MOD 37) - 18
+      rvy = (RAND() MOD 37) - 18
+
+      SPRITE fslot, sc_addr, sc_bbox, sc_bbox, sc_x, sc_y, SPR_VECTOR, rvx, rvy, EDGE_WRAP
+      SPR_GROUP fslot, 2, 4
+      SPR_COLL fslot, COLL_DETECT
+
+      ' Random angle + random rotSpeed
+      rangle = RAND() AND 255
+      rspeed = (RAND() MOD 81) - 40
+      SPR_ROT fslot, rangle, rspeed
+
+      sizes(fslot - 5) = sc_size
+      ast_count = ast_count + 1
+      EXIT FOR
+    END IF
+  NEXT
+END SUB
+
+SUB spawn_wave()
+  wave = wave + 1
+  wcount = wave + 3
+  IF wcount > 27 THEN wcount = 27
+
+  FOR wi = 0 TO wcount - 1
+    ' Random x: edge (5 or 110)
+    IF RAND() MOD 2 = 0 THEN
+      wx = 110
+    ELSE
+      wx = 5
+    END IF
+
+    spawn_child 1, wx, (RAND() MOD 50) + 5
+  NEXT
+END SUB
+
+SUB draw_hud()
+  ' Draw score at top-left
+  TEXT_NUM score, 1, 1
+
+  ' Draw lives icons at top-right
+  FOR li = 0 TO lives - 1
+    lx = 122 - li * 6
+    BLIT ship_icon, lx, 1, 5, 5
+  NEXT
+END SUB
+
+' ── Main program ─────────────────────────────────────────────────
+DO
+  init_game
+
+  ' ── Game loop ──────────────────────────────────────────────────
+  DO WHILE game_state = 0
+    check_collisions
+
+    ' Check if all asteroids destroyed → next wave
+    IF ast_count = 0 THEN spawn_wave
+
+    ' ── Invincibility flash ──────────────────────────────────────
+    IF invincible > 0 THEN
+      invincible = invincible - 1
+      SPR_COLL 0, COLL_NONE
+
+      ' Flash: hide ship when (timer AND 4) <> 0
+      IF invincible AND 4 THEN
+        SPR_VIS 0, 0
+      ELSE
+        SPR_VIS 0, 1
+      END IF
+    ELSE
+      ' Ensure ship visible + collision on
+      SPR_VIS 0, 1
+      SPR_COLL 0, COLL_DETECT
+    END IF
+
+    inp = INPUT()
+
+    ' ── Handle rotation ──────────────────────────────────────────
+    IF inp AND INPUT_ENC_CW THEN
+      angle = SPR_GETROT(0)
+      angle = (angle + 9) AND 255
+      SPR_ROT 0, angle, 0
+    END IF
+
+    IF inp AND INPUT_ENC_CCW THEN
+      angle = SPR_GETROT(0)
+      angle = (angle - 9) AND 255
+      SPR_ROT 0, angle, 0
+    END IF
+
+    ' ── Handle thrust (BTN) ──────────────────────────────────────
+    IF inp AND INPUT_BTN THEN
+      thrust_angle = (SPR_GETROT(0) + 192) AND 255
+
+      cos_val = COS(thrust_angle)
+      IF cos_val >= 128 THEN cos_val = cos_val - 256
+      ship_vx = ship_vx + FX_MUL(cos_val, 5, 5)
+
+      sin_val = SIN(thrust_angle)
+      IF sin_val >= 128 THEN sin_val = sin_val - 256
+      ship_vy = ship_vy + FX_MUL(sin_val, 5, 5)
+    END IF
+
+    ' ── Handle fire (ENC_BTN) ────────────────────────────────────
+    IF inp AND INPUT_ENC_BTN THEN
+      IF cooldown = 0 THEN
+        sx, sy = SPR_GET(0)
+        sx = sx + 2
+        sy = sy + 2
+
+        thrust_angle = (SPR_GETROT(0) + 192) AND 255
+
+        ' Bullet vx
+        cos_val = COS(thrust_angle)
+        IF cos_val < 128 THEN
+          bvx = cos_val SHR 1
+        ELSE
+          bvx = -((256 - cos_val) SHR 1)
+        END IF
+
+        ' Bullet vy
+        sin_val = SIN(thrust_angle)
+        IF sin_val < 128 THEN
+          bvy = sin_val SHR 1
+        ELSE
+          bvy = -((256 - sin_val) SHR 1)
+        END IF
+
+        bslot = next_bullet
+        next_bullet = (next_bullet MOD 4) + 1
+
+        SPRITE bslot, bullet_bmp, 2, 2, sx, sy, 0, bvx, bvy, EDGE_DESTROY
+        SPR_GROUP bslot, 4, 2
+        SPR_COLL bslot, COLL_DESTROY
+
+        cooldown = 8
+      END IF
+    END IF
+
+    ' ── Apply drag: velocity *= 250/256 ──────────────────────────
+    ship_vx = FX_MUL(ship_vx, 250, 8)
+    ship_vy = FX_MUL(ship_vy, 250, 8)
+
+    ' ── Convert 8.8 velocity to sprite velocity (÷4) ────────────
+    SPR_VEL 0, ASHR(ship_vx, 2), ASHR(ship_vy, 2)
+
+    ' ── Decrement fire cooldown ──────────────────────────────────
+    IF cooldown > 0 THEN cooldown = cooldown - 1
+
+    draw_hud
+    YIELD
+  LOOP
+
+  ' ── Game over screen ───────────────────────────────────────────
+  FOR gs = 0 TO 31
+    SPR_OFF gs
+  NEXT
+
+  DO
+    TEXT_LG "GAME OVER", 37, 20
+    TEXT_NUM score, 52, 35
+
+    IF INPUT() AND INPUT_ENC_BTN THEN EXIT DO
+
+    YIELD
+  LOOP
+LOOP
+`,
+  },
+  {
+    name: "BASIC: Sprites",
+    lang: "basic",
+    source: `' Managed Sprites — collision groups, walls, bounce/wrap/destroy
+' Two wall barriers; sprites with different collision groups.
+'
+' Sprite 0 (big circle 16x16): group=1, bounces off walls + edges
+' Sprite 1 (diamond 8x8):      group=2, wraps at edges, no walls
+' Sprite 2 (small diamond 4x4): group=1, mask=1 — stops at walls,
+'                                bounces off circle, ignores diamond
+' Sprite 3 (square 8x8):       group=1, detect-only + hit callback
+'                                teleports to random position on collision
+' Sprite 4 (tall bar 4x12):    group=2, destroys on wall contact
+
+' --- Graphics data ---
+DATA big_circle, $07,$E0,$1F,$F8,$3F,$FC,$7F,$FE,$7F,$FE,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$7F,$FE,$7F,$FE,$3F,$FC,$1F,$F8,$07,$E0
+DATA diamond_gfx, $18,$3C,$7E,$FF,$FF,$7E,$3C,$18
+DATA square_gfx, $FF,$81,$81,$81,$81,$81,$81,$FF
+DATA sm_diamond, $60,$F0,$F0,$60
+DATA tall_bar, $F0,$F0,$F0,$F0,$F0,$F0,$F0,$F0,$F0,$F0,$F0,$F0
+
+' --- Hit callback: teleport square to random position ---
+CALLBACK square_hit(slot)
+  SPR_POS slot, RAND() MOD 112, RAND() MOD 48
+END CALLBACK
+
+' --- Walls ---
+WALL_SET 0, 30, 0, 4, 64
+WALL_SET 1, 94, 0, 4, 64
+
+' --- Sprite 0: Big circle, bounce walls + edges, group 1 ---
+SPRITE 0, big_circle, 16, 16, 50, 10, 0, 32, 48, EDGE_BOUNCE
+SPR_WALL 0, COLL_BOUNCE
+SPR_COLL 0, COLL_BOUNCE
+SPR_GROUP 0, 1, $FF
+
+' --- Sprite 1: Diamond, wraps at edges, group 2 ---
+SPRITE 1, diamond_gfx, 8, 8, 60, 5, 0, 128, -64, EDGE_WRAP
+SPR_COLL 1, COLL_BOUNCE
+SPR_GROUP 1, 2, $FF
+
+' --- Sprite 2: Small diamond, stops at walls, bounces off group 1 only ---
+SPRITE 2, sm_diamond, 4, 4, 50, 5, 0, 96, 48, EDGE_BOUNCE
+SPR_WALL 2, COLL_STOP
+SPR_COLL 2, COLL_BOUNCE
+SPR_GROUP 2, 1, 1
+
+' --- Sprite 3: Square, detect-only + hit callback, group 1 ---
+SPRITE 3, square_gfx, 8, 8, 60, 40, 0, -64, -64, EDGE_BOUNCE
+SPR_COLL 3, COLL_DETECT
+SPR_GROUP 3, 1, $FF
+SPR_ON_HIT 3, square_hit
+
+' --- Sprite 4: Tall bar, destroys on wall contact, group 2 ---
+SPRITE 4, tall_bar, 4, 12, 40, 26, 0, 64, 0, EDGE_NONE
+SPR_WALL 4, COLL_DESTROY
+SPR_GROUP 4, 2, $FF
+
+' --- Main loop: draw visible wall rectangles ---
+DO
+  RECT 30, 0, 4, 64
+  RECT 94, 0, 4, 64
+  YIELD
+LOOP
+`,
+  },
+  {
+    name: "BASIC: Bouncing Dot",
+    lang: "basic",
+    source: `' Bouncing dot in BASIC
+' A single 1x1 pixel sprite with bounce edge mode
+
+DATA dot_gfx, $80
+
+SPRITE 0, dot_gfx, 1, 1, 10, 5, 0, 64, 64, EDGE_BOUNCE
+
+DO
+  YIELD
+LOOP
+`,
+  },
+  {
+    name: "BASIC: Input Test",
+    lang: "basic",
+    source: `' Move a 4x4 block with arrow keys / WASD
+
+x = 60
+y = 28
+
+DO
+  inp = INPUT()
+  IF inp AND INPUT_UP THEN y = y - 1
+  IF inp AND INPUT_DOWN THEN y = y + 1
+  IF inp AND INPUT_LEFT THEN x = x - 1
+  IF inp AND INPUT_RIGHT THEN x = x + 1
+  RECT x, y, 4, 4
+  YIELD
+LOOP
+`,
+  },
+  {
+    name: "BASIC: Starfield",
+    lang: "basic",
+    source: `' ── Starfield ────────────────────────────────────────────────────
+' 50/50 dithered background, scrolling stars, bouncing balls.
+' All movement handled by the sprite engine — zero per-frame CPU.
+
+' ── Graphics DATA ────────────────────────────────────────────────
+' Dither tile: 128x2 checkerboard (32 bytes)
+DATA dither, $55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA
+
+' 1x1 star pixel
+DATA star_gfx, $80
+
+' Filled circle 8x8
+DATA ball8, $3C,$7E,$FF,$FF,$FF,$FF,$7E,$3C
+
+' Filled circle 12x12 (row-aligned: 2 bytes/row, 24 bytes total)
+DATA ball12, $0F,$00,$3F,$C0,$7F,$E0,$7F,$E0,$FF,$F0,$FF,$F0,$FF,$F0,$FF,$F0,$7F,$E0,$7F,$E0,$3F,$C0,$0F,$00
+
+' ── Sprite layout: 0-4 = balls, 5-31 = stars (27 stars) ─────────
+
+' ── Initialize balls (slots 0-4) ─────────────────────────────────
+' Velocity unit: 64 = 1 px/frame. Firmware uses 1-3 dx, 1-2 dy.
+FOR i = 0 TO 4
+  bw = 8
+  gfx = ball8
+  IF RAND() AND 1 THEN
+    bw = 12
+    gfx = ball12
+  END IF
+
+  bx = bw + RAND() MOD (128 - 2 * bw)
+  by = bw + RAND() MOD (64 - 2 * bw)
+
+  vx = 64 + RAND() MOD 192
+  IF RAND() AND 1 THEN vx = 0 - vx
+  vy = 64 + RAND() MOD 128
+  IF RAND() AND 1 THEN vy = 0 - vy
+
+  SPRITE i, gfx, bw, bw, bx, by, 0, vx, vy, EDGE_BOUNCE
+NEXT
+
+' ── Initialize stars (slots 5-31) ────────────────────────────────
+' Stars scroll left at varying speeds and wrap around.
+FOR i = 5 TO 31
+  sx = RAND() MOD 128
+  sy = RAND() MOD 64
+  speed = 0 - (64 + RAND() MOD 192)
+  SPRITE i, star_gfx, 1, 1, sx, sy, 0, speed, 0, EDGE_WRAP
+NEXT
+
+' ══════════════════════════════════════════════════════════════════
+' Main loop — just draw the dither background each frame.
+' Sprite engine handles all star and ball movement + drawing.
+' ══════════════════════════════════════════════════════════════════
+DO
+  FOR y = 0 TO 62 STEP 2
+    BLIT dither, 0, y, 128, 2
+  NEXT
+  YIELD
+LOOP
 `,
   },
 ];

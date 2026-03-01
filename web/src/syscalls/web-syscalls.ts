@@ -38,6 +38,9 @@ export const Sys = {
   COS: 0x23,
   TEXT_SM: 0x24,
   TEXT_LG: 0x25,
+  TEXT_NUM: 0x26,
+  ASHR: 0x27,
+  FX_MUL: 0x28,
   SPR_SET: 0x40,
   SPR_POS: 0x41,
   SPR_VEL: 0x42,
@@ -53,6 +56,7 @@ export const Sys = {
   SPR_ON_HIT: 0x4c,
   SPR_ROT: 0x4d,
   SPR_GETROT: 0x4e,
+  SPR_VIS: 0x4f,
 } as const;
 
 export interface SyscallContext {
@@ -188,13 +192,13 @@ export function createWebSyscallHandler(ctx: SyscallContext): SyscallHandler {
 
       case Sys.SIN: {
         const angle = pop(vm) & 0xff;
-        push(vm, SIN_TABLE[angle]);
+        push(vm, SIN_TABLE[angle]!);
         break;
       }
 
       case Sys.COS: {
         const angle = pop(vm) & 0xff;
-        push(vm, SIN_TABLE[(angle + 64) & 0xff]);
+        push(vm, SIN_TABLE[(angle + 64) & 0xff]!);
         break;
       }
 
@@ -214,6 +218,29 @@ export function createWebSyscallHandler(ctx: SyscallContext): SyscallHandler {
         break;
       }
 
+      case Sys.TEXT_NUM: {
+        const y = pop(vm);
+        const x = pop(vm);
+        const value = pop(vm);
+        drawText(ctx.fb, String(value), x, y, FONT_SM, 3, 5, 4);
+        break;
+      }
+
+      case Sys.ASHR: {
+        const bits = pop(vm);
+        const value = toI16(pop(vm));
+        push(vm, (value >> bits) & 0xffff);
+        break;
+      }
+
+      case Sys.FX_MUL: {
+        const q = pop(vm);
+        const b = toI16(pop(vm));
+        const a = toI16(pop(vm));
+        push(vm, ((a * b) >> q) & 0xffff);
+        break;
+      }
+
       case Sys.SPR_SET: {
         const edge = pop(vm);
         const vy = toI16(pop(vm));
@@ -228,6 +255,7 @@ export function createWebSyscallHandler(ctx: SyscallContext): SyscallHandler {
         const spr = ctx.sprites[slot];
         if (spr) {
           spr.active = true;
+          spr.visible = true;
           spr.addr = addr;
           spr.width = width;
           spr.height = height;
@@ -395,6 +423,16 @@ export function createWebSyscallHandler(ctx: SyscallContext): SyscallHandler {
           push(vm, Math.round(spr.angle) & 0xff);
         } else {
           push(vm, 0);
+        }
+        break;
+      }
+
+      case Sys.SPR_VIS: {
+        const visible = pop(vm);
+        const slot = pop(vm);
+        const spr = ctx.sprites[slot];
+        if (spr) {
+          spr.visible = !!visible;
         }
         break;
       }

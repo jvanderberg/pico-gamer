@@ -49,11 +49,14 @@
         min-width: 0;
       }
 
-      .editor-panel label {
+      #editor-label {
         padding: 4px 8px;
         font-size: 12px;
         color: #a0a0a0;
         background: #16213e;
+        display: flex;
+        align-items: center;
+        gap: 8px;
       }
 
       #asm-editor {
@@ -277,7 +280,13 @@
     </header>
     <div class="main">
       <div class="editor-panel">
-        <label>Assembly Source</label>
+        <div id="editor-label">
+          <select id="sel-lang">
+            <option value="asm">ASM</option>
+            <option value="basic">BASIC</option>
+          </select>
+          <span id="editor-label-text">Assembly Source</span>
+        </div>
         <textarea id="asm-editor" spellcheck="false"></textarea>
       </div>
       <div class="display-panel">

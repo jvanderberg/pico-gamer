@@ -15,8 +15,10 @@
 #define PAGES       (HEIGHT / 8)
 #define COL_OFFSET  2  // SH1106 has 132-col RAM, 128-col display offset by 2
 
-static uint8_t framebuf[PAGES * WIDTH];
-static uint8_t prevbuf[PAGES * WIDTH];
+static uint8_t buf_a[PAGES * WIDTH];
+static uint8_t buf_b[PAGES * WIDTH];
+static uint8_t *draw_buf = buf_a;   // game draws here
+static uint8_t *disp_buf = buf_b;   // what's on the display
 
 // DMA transfer buffer: 16-bit IC_DATA_CMD entries
 // Worst case: 8 pages * (3 cmd bytes + 1 control + 128 data + overhead)
@@ -28,7 +30,8 @@ static uint8_t prevbuf[PAGES * WIDTH];
 static uint16_t dma_buf[DMA_BUF_SIZE];
 static int dma_chan = -1;
 static volatile bool dma_busy = false;
-static uint32_t dma_bytes_queued = 0;
+static volatile uint64_t dma_start_us = 0;
+static volatile uint64_t dma_elapsed_us = 0;
 
 static void sh1106_cmd(uint8_t cmd) {
     uint8_t buf[2] = {0x00, cmd};
@@ -66,6 +69,12 @@ static int encode_i2c_write(uint16_t *dest, const uint8_t *data, int len) {
     return n;
 }
 
+static void dma_irq_handler(void) {
+    dma_hw->ints0 = 1u << dma_chan;
+    dma_elapsed_us = time_us_64() - dma_start_us;
+    dma_busy = false;
+}
+
 static void dma_init_i2c(void) {
     dma_chan = dma_claim_unused_channel(true);
 
@@ -82,19 +91,26 @@ static void dma_init_i2c(void) {
         0,                                  // count set later
         false                               // don't start yet
     );
+
+    dma_channel_set_irq0_enabled(dma_chan, true);
+    irq_set_exclusive_handler(DMA_IRQ_0, dma_irq_handler);
+    irq_set_enabled(DMA_IRQ_0, true);
 }
 
 static void dma_wait(void) {
     if (dma_busy) {
-        dma_channel_wait_for_finish_blocking(dma_chan);
-        dma_busy = false;
+        while (dma_busy) tight_loop_contents();  // IRQ clears this
+        // DMA done = TX FIFO fed, but I2C may still be clocking out bytes.
+        while (!(i2c_get_hw(I2C_PORT)->raw_intr_stat & I2C_IC_RAW_INTR_STAT_TX_EMPTY_BITS))
+            tight_loop_contents();
+        while (i2c_get_hw(I2C_PORT)->status & I2C_IC_STATUS_ACTIVITY_BITS)
+            tight_loop_contents();
     }
 }
 
-// Queue all dirty pages into dma_buf, then fire DMA
+// Diff draw_buf vs disp_buf, DMA the deltas, then swap buffers.
+// Caller must dma_wait() first.
 static uint32_t sh1106_flush_delta_dma(void) {
-    dma_wait();  // ensure previous transfer done
-
     int pos = 0;
     uint32_t bytes_sent = 0;
     uint8_t cmd_buf[2];
@@ -104,7 +120,7 @@ static uint32_t sh1106_flush_delta_dma(void) {
 
         int lo = -1, hi = -1;
         for (int x = 0; x < WIDTH; x++) {
-            if (framebuf[offset + x] != prevbuf[offset + x]) {
+            if (draw_buf[offset + x] != disp_buf[offset + x]) {
                 if (lo < 0) lo = x;
                 hi = x;
             }
@@ -114,51 +130,47 @@ static uint32_t sh1106_flush_delta_dma(void) {
         int span = hi - lo + 1;
         int col = COL_OFFSET + lo;
 
-        // Page address command
-        cmd_buf[0] = 0x00;  // control: command mode
+        cmd_buf[0] = 0x00;
         cmd_buf[1] = 0xB0 | page;
         pos += encode_i2c_write(&dma_buf[pos], cmd_buf, 2);
 
-        // Column low nibble
         cmd_buf[1] = 0x00 | (col & 0x0F);
         pos += encode_i2c_write(&dma_buf[pos], cmd_buf, 2);
 
-        // Column high nibble
         cmd_buf[1] = 0x10 | ((col >> 4) & 0x0F);
         pos += encode_i2c_write(&dma_buf[pos], cmd_buf, 2);
 
-        // Data: control byte 0x40 + pixel data
-        // Build inline: first byte is 0x40 (data mode), rest is pixel data
         uint16_t *start = &dma_buf[pos];
         int data_len = 1 + span;
 
-        // 0x40 control byte
         uint16_t word = 0x40 | (1 << 11);  // RESTART
-        if (data_len == 1) word |= (1 << 9);  // STOP if only control byte
+        if (data_len == 1) word |= (1 << 9);
         start[0] = word;
 
         for (int i = 0; i < span; i++) {
-            word = framebuf[offset + lo + i];
-            if (i == span - 1) word |= (1 << 9);  // STOP on last
+            word = draw_buf[offset + lo + i];
+            if (i == span - 1) word |= (1 << 9);
             start[1 + i] = word;
         }
         pos += data_len;
-
         bytes_sent += span;
-        memcpy(&prevbuf[offset + lo], &framebuf[offset + lo], span);
     }
 
     if (pos > 0) {
-        // Set target address
         i2c_get_hw(I2C_PORT)->enable = 0;
         i2c_get_hw(I2C_PORT)->tar = SH1106_ADDR;
         i2c_get_hw(I2C_PORT)->enable = 1;
 
+        dma_start_us = time_us_64();
         dma_channel_set_read_addr(dma_chan, dma_buf, false);
-        dma_channel_set_trans_count(dma_chan, pos, true);  // start
+        dma_channel_set_trans_count(dma_chan, pos, true);
         dma_busy = true;
-        dma_bytes_queued = bytes_sent;
     }
+
+    // Swap: draw_buf becomes the new display reference
+    uint8_t *tmp = draw_buf;
+    draw_buf = disp_buf;
+    disp_buf = tmp;
 
     return bytes_sent;
 }
@@ -170,10 +182,13 @@ static void sh1106_flush_full(void) {
         sh1106_cmd(0xB0 | page);
         sh1106_cmd(0x00 | ((COL_OFFSET) & 0x0F));
         sh1106_cmd(0x10 | ((COL_OFFSET >> 4) & 0x0F));
-        memcpy(&buf[1], &framebuf[page * WIDTH], WIDTH);
+        memcpy(&buf[1], &draw_buf[page * WIDTH], WIDTH);
         i2c_write_blocking(I2C_PORT, SH1106_ADDR, buf, 1 + WIDTH, false);
     }
-    memcpy(prevbuf, framebuf, sizeof(framebuf));
+    // Swap so disp_buf reflects what's on screen
+    uint8_t *tmp = draw_buf;
+    draw_buf = disp_buf;
+    disp_buf = tmp;
 }
 
 static void fill_dither50(void) {
@@ -184,7 +199,7 @@ static void fill_dither50(void) {
             for (int bit = 0; bit < 8; bit++) {
                 if ((x + y0 + bit) & 1) col |= 1 << bit;
             }
-            framebuf[page * WIDTH + x] = col;
+            draw_buf[page * WIDTH + x] = col;
         }
     }
 }
@@ -196,7 +211,7 @@ static void hline(int x0, int x1, int y) {
     int page = y / 8;
     uint8_t mask = 1 << (y & 7);
     for (int x = x0; x <= x1; x++) {
-        framebuf[page * WIDTH + x] |= mask;
+        draw_buf[page * WIDTH + x] |= mask;
     }
 }
 
@@ -238,7 +253,7 @@ typedef struct {
 
 static void set_pixel(int x, int y) {
     if (x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT) return;
-    framebuf[(y / 8) * WIDTH + x] |= 1 << (y & 7);
+    draw_buf[(y / 8) * WIDTH + x] |= 1 << (y & 7);
 }
 
 int main(void) {
@@ -282,15 +297,16 @@ int main(void) {
     sh1106_flush_full();
 
     uint32_t frame_count = 0;
+    uint32_t global_frame = 0;
     uint32_t total_bytes = 0;
     uint64_t total_game_us = 0;
-    uint64_t total_flush_us = 0;
+    uint64_t total_dma_us = 0;
     absolute_time_t last_report = get_absolute_time();
 
     while (true) {
         absolute_time_t frame_start = get_absolute_time();
 
-        // --- Game logic (runs while previous DMA may still be in flight) ---
+        // --- Game logic (runs while previous DMA is in flight) ---
         fill_dither50();
 
         for (int i = 0; i < NUM_STARS; i++) {
@@ -315,29 +331,36 @@ int main(void) {
 
         absolute_time_t after_game = get_absolute_time();
 
-        // --- Kick off DMA flush (waits for previous if still running) ---
+        // Wait for previous DMA to finish, read IRQ-measured duration
+        dma_wait();
+        total_dma_us += dma_elapsed_us;
+
+        // Force full refresh every 60 frames to correct any I2C drift
+        if (global_frame % 60 == 0) {
+            memset(disp_buf, 0xFF, PAGES * WIDTH);  // force all bytes dirty
+        }
+
+        // Build delta buffer + kick new DMA
         total_bytes += sh1106_flush_delta_dma();
 
-        absolute_time_t after_flush = get_absolute_time();
-
         total_game_us += absolute_time_diff_us(frame_start, after_game);
-        total_flush_us += absolute_time_diff_us(after_game, after_flush);
         frame_count++;
+        global_frame++;
 
         absolute_time_t now = get_absolute_time();
         int64_t elapsed_us = absolute_time_diff_us(last_report, now);
         if (elapsed_us >= 1000000) {
             uint32_t avg_game = total_game_us / frame_count;
-            uint32_t avg_flush = total_flush_us / frame_count;
+            uint32_t avg_dma = total_dma_us / frame_count;
             uint32_t avg_bytes = total_bytes / frame_count;
-            uint32_t avail = FRAME_US - avg_game - avg_flush;
+            int32_t avail = (int32_t)FRAME_US - (int32_t)avg_game;
             float fps = (float)frame_count * 1000000.0f / (float)elapsed_us;
-            printf("FPS: %.1f  game: %uus  flush: %uus  avail: %uus  bytes: %u\n",
-                   fps, avg_game, avg_flush, avail, avg_bytes);
+            printf("FPS: %.1f  game: %uus  dma: %uus  avail: %dus  bytes: %u\n",
+                   fps, avg_game, avg_dma, avail, avg_bytes);
             frame_count = 0;
             total_bytes = 0;
             total_game_us = 0;
-            total_flush_us = 0;
+            total_dma_us = 0;
             last_report = now;
         }
 

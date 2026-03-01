@@ -21,7 +21,8 @@ import {
 } from "./syscalls/web-syscalls.ts";
 import { resetSpriteTable, resetWallTable } from "./sprites/sprites.ts";
 import { createRuntime, run, stop, stepOne } from "./runtime/runtime.ts";
-import { assemble, isError } from "./assembler/assembler.ts";
+import { assemble, isError, type AssemblerResult } from "./assembler/assembler.ts";
+import { compile, isCompileError } from "./basic/compiler.ts";
 import { DEMOS } from "./demos/demos.ts";
 
 // --- DOM elements ---
@@ -44,6 +45,8 @@ const stackView = document.getElementById("stack-view") as HTMLPreElement;
 const memCmd = document.getElementById("mem-cmd") as HTMLInputElement;
 const memOutput = document.getElementById("mem-output") as HTMLPreElement;
 const selScale = document.getElementById("sel-scale") as HTMLSelectElement;
+const selLang = document.getElementById("sel-lang") as HTMLSelectElement;
+const editorLabelText = document.getElementById("editor-label-text") as HTMLSpanElement;
 
 // --- Scale canvas ---
 let scale = parseInt(selScale.value, 10);
@@ -181,6 +184,29 @@ function clearError(): void {
   errorOutput.textContent = "";
 }
 
+/** Compile BASIC → ASM (if needed), then assemble. Returns result or null on error. */
+function assembleSource(source: string): AssemblerResult | null {
+  let asmSource = source;
+  if (selLang.value === "basic") {
+    const compiled = compile(source);
+    if (isCompileError(compiled)) {
+      showError(`[${compiled.phase}] Line ${compiled.line}: ${compiled.message}`);
+      return null;
+    }
+    asmSource = compiled;
+  }
+  const result = assemble(asmSource);
+  if (isError(result)) {
+    showError(`Line ${result.line}: ${result.message}`);
+    return null;
+  }
+  return result;
+}
+
+selLang.addEventListener("change", () => {
+  editorLabelText.textContent = selLang.value === "basic" ? "BASIC Source" : "Assembly Source";
+});
+
 /** Highlight the source line corresponding to the current PC in the editor. */
 function highlightCurrentLine(): void {
   if (!lastPcToLine) return;
@@ -204,11 +230,8 @@ function highlightCurrentLine(): void {
 // --- Button handlers ---
 btnAssemble.addEventListener("click", () => {
   clearError();
-  const result = assemble(editor.value);
-  if (isError(result)) {
-    showError(`Line ${result.line}: ${result.message}`);
-    return;
-  }
+  const result = assembleSource(editor.value);
+  if (!result) return;
   lastBytecode = result.bytecode;
   lastPcToLine = result.pcToLine;
 
@@ -219,7 +242,6 @@ btnAssemble.addEventListener("click", () => {
   loadProgram(vm.memory, result.bytecode);
   renderToCanvas(fb, ctx, scale);
   updateStatus();
-  showError("");
 });
 
 btnRun.addEventListener("click", () => {
@@ -278,19 +300,18 @@ for (const demo of DEMOS) {
   btn.textContent = demo.name;
   btn.addEventListener("click", () => {
     stop(rt);
+    selLang.value = demo.lang;
+    editorLabelText.textContent = demo.lang === "basic" ? "BASIC Source" : "Assembly Source";
     editor.value = demo.source;
     clearError();
     // Auto-assemble and reset
-    const result = assemble(demo.source);
-    if (isError(result)) {
-      showError(`Line ${result.line}: ${result.message}`);
-      return;
-    }
+    const result = assembleSource(demo.source);
+    if (!result) return;
     lastBytecode = result.bytecode;
     lastPcToLine = result.pcToLine;
     resetVM(vm);
     resetSpriteTable(syscallCtx.sprites);
-  resetWallTable(syscallCtx.walls);
+    resetWallTable(syscallCtx.walls);
     loadProgram(vm.memory, result.bytecode);
     renderToCanvas(fb, ctx, scale);
     updateStatus();
