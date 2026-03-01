@@ -244,6 +244,48 @@ void test_spr_vis(void) {
     TEST_ASSERT_FALSE(sprites.sprites[0].visible);
 }
 
+void test_blit_row_aligned(void) {
+    // 5x5 ship icon, row-aligned (1 byte per row)
+    // Row 0: ..#.. = 0x20
+    // Row 1: .#.#. = 0x50
+    // Row 2: .#.#. = 0x50
+    // Row 3: #...# = 0x88
+    // Row 4: ##### = 0xF8
+    loadAsm(
+        "JMP start\n"
+        "icon:\n"
+        ".data 0x20, 0x50, 0x50, 0x88, 0xF8\n"
+        "start:\n"
+        "PUSH16 icon\n" // srcAddr
+        "PUSH8 10\n"    // x
+        "PUSH8 10\n"    // y
+        "PUSH8 5\n"     // w
+        "PUSH8 5\n"     // h
+        "SYSCALL 5\n"   // BLIT
+        "HALT\n"
+    );
+    runUntilStop();
+
+    // Row 0: center pixel set
+    TEST_ASSERT_EQUAL_INT(1, getPixel(fb, 12, 10));
+    TEST_ASSERT_EQUAL_INT(0, getPixel(fb, 10, 10));
+
+    // Row 3: corners set, middle clear
+    TEST_ASSERT_EQUAL_INT(1, getPixel(fb, 10, 13));
+    TEST_ASSERT_EQUAL_INT(1, getPixel(fb, 14, 13));
+    TEST_ASSERT_EQUAL_INT(0, getPixel(fb, 12, 13));
+
+    // Row 4 (bottom line): ALL 5 pixels must be set
+    TEST_ASSERT_EQUAL_INT(1, getPixel(fb, 10, 14));
+    TEST_ASSERT_EQUAL_INT(1, getPixel(fb, 11, 14));
+    TEST_ASSERT_EQUAL_INT(1, getPixel(fb, 12, 14));
+    TEST_ASSERT_EQUAL_INT(1, getPixel(fb, 13, 14));
+    TEST_ASSERT_EQUAL_INT(1, getPixel(fb, 14, 14));
+
+    // Past the sprite boundary
+    TEST_ASSERT_EQUAL_INT(0, getPixel(fb, 15, 14));
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_clear_syscall);
@@ -262,5 +304,6 @@ int main(void) {
     RUN_TEST(test_text_num_syscall);
     RUN_TEST(test_spr_set_get);
     RUN_TEST(test_spr_vis);
+    RUN_TEST(test_blit_row_aligned);
     return UNITY_END();
 }

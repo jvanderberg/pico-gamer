@@ -1068,3 +1068,63 @@ describe("Example programs", () => {
     expect(h.pixel(64, 32)).toBe(0);
   });
 });
+
+// ── BLIT row-aligned format tests ───────────────────────────
+
+describe("BLIT row-aligned", () => {
+  it("renders all rows of a non-byte-aligned width sprite", () => {
+    // 5x5 ship icon: row-aligned (1 byte per row, 5 bits used)
+    // Row 0: ..#.. = 0x20
+    // Row 1: .#.#. = 0x50
+    // Row 2: .#.#. = 0x50
+    // Row 3: #...# = 0x88
+    // Row 4: ##### = 0xF8
+    const h = loadBasic(`
+      DATA icon, $20, $50, $50, $88, $F8
+      BLIT icon, 10, 10, 5, 5
+      YIELD
+    `);
+    h.frame();
+
+    // Row 0: pixel at (12,10) set, (10,10) clear
+    expect(h.pixel(12, 10)).toBe(1);
+    expect(h.pixel(10, 10)).toBe(0);
+
+    // Row 3: corners set, middle clear
+    expect(h.pixel(10, 13)).toBe(1);
+    expect(h.pixel(14, 13)).toBe(1);
+    expect(h.pixel(12, 13)).toBe(0);
+
+    // Row 4 (bottom line): ALL 5 pixels set
+    expect(h.pixel(10, 14)).toBe(1);
+    expect(h.pixel(11, 14)).toBe(1);
+    expect(h.pixel(12, 14)).toBe(1);
+    expect(h.pixel(13, 14)).toBe(1);
+    expect(h.pixel(14, 14)).toBe(1);
+
+    // Pixel just past the 5x5 region should be clear
+    expect(h.pixel(15, 14)).toBe(0);
+  });
+
+  it("byte-aligned blit reads correct number of bytes per row", () => {
+    // 8x2 sprite: 1 byte per row, 2 rows
+    // Row 0: ####.... = 0xF0
+    // Row 1: ....#### = 0x0F
+    const h = loadBasic(`
+      DATA pat, $F0, $0F
+      BLIT pat, 0, 0, 8, 2
+      YIELD
+    `);
+    h.frame();
+
+    // Row 0: first 4 pixels set, last 4 clear
+    expect(h.pixel(0, 0)).toBe(1);
+    expect(h.pixel(3, 0)).toBe(1);
+    expect(h.pixel(4, 0)).toBe(0);
+
+    // Row 1: first 4 clear, last 4 set
+    expect(h.pixel(0, 1)).toBe(0);
+    expect(h.pixel(4, 1)).toBe(1);
+    expect(h.pixel(7, 1)).toBe(1);
+  });
+});

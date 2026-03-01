@@ -158,7 +158,7 @@ export function createWebSyscallHandler(ctx: SyscallContext): SyscallHandler {
         const y = pop(vm);
         const x = pop(vm);
         const srcAddr = pop(vm);
-        const byteCount = Math.ceil((w * h) / 8);
+        const byteCount = Math.ceil(w / 8) * h;
         const srcData = vm.memory.slice(srcAddr, srcAddr + byteCount);
         blit(ctx.fb, srcData, x, y, w, h);
         break;

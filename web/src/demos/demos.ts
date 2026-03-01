@@ -421,10 +421,10 @@ ast_small:
   .data 0x00, 0x20, 0xE0, 0x00
   .data 0xE0, 0x00, 0x00, 0xE0
 
-; Ship icon for lives HUD (5x5 1-bit flat-packed, matching ship outline)
+; Ship icon for lives HUD (5x5 1-bit row-aligned, matching ship outline)
 ; ..#..  .#.#.  .#.#.  #...#  #####
 ship_icon:
-  .data 0x22, 0x95, 0x1F, 0x80
+  .data 0x20, 0x50, 0x50, 0x88, 0xF8
 
 ; "GAME OVER" null-terminated
 str_game_over:
@@ -1590,8 +1590,8 @@ DATA ast_med, 5, $00,$C0,$40,$F0, $40,$F0,$30,$30, $30,$30,$D0,$30, $D0,$30,$C0,
 ' Small (4 segments, ~5x5)
 DATA ast_small, 4, $00,$E0,$20,$00, $20,$00,$00,$20, $00,$20,$E0,$00, $E0,$00,$00,$E0
 
-' Ship icon for lives HUD (5x5 flat-packed)
-DATA ship_icon, $22, $95, $1F, $80
+' Ship icon for lives HUD (5x5 row-aligned)
+DATA ship_icon, $20, $50, $50, $88, $F8
 
 ' ── Array for asteroid sizes (slots 5-31 = 27 entries) ────────────
 DIM sizes(27)
