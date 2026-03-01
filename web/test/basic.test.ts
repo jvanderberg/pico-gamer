@@ -296,10 +296,9 @@ describe("Parser", () => {
     expect(ast.statements[0]!.name).toBe("myLabel");
   });
 
-  it("parses GOTO and GOSUB", () => {
-    const ast = parseOk("GOTO myLabel\nGOSUB myFunc");
+  it("parses GOTO", () => {
+    const ast = parseOk("GOTO myLabel");
     expect(ast.statements[0]!.kind).toBe("goto");
-    expect(ast.statements[1]!.kind).toBe("gosub");
   });
 
   it("parses function calls in expressions", () => {
@@ -742,17 +741,15 @@ describe("Integration", () => {
     expect(h.read16(0xc102)).toBe(1);
   });
 
-  it("GOSUB/RETURN works", () => {
+  it("SUB call works like GOSUB", () => {
     const h = loadBasic(`
+      SUB inc()
+        x = x + 1
+      END SUB
       x = 0
-      GOSUB inc
-      GOSUB inc
-      GOSUB inc
-      GOTO done
-      inc:
-      x = x + 1
-      RETURN
-      done:
+      inc
+      inc
+      inc
     `);
     h.frame();
     expect(h.read16(0xc100)).toBe(3);
