@@ -48,10 +48,12 @@ export function createInput(): InputState {
   return { bits: 0 };
 }
 
-/** Returns true if the event target is a text input (textarea, input, etc). */
+/** Returns true if the event target is a text input (textarea, input, contentEditable). */
 function isEditable(e: KeyboardEvent): boolean {
-  const tag = (e.target as HTMLElement)?.tagName;
-  return tag === "TEXTAREA" || tag === "INPUT";
+  const el = e.target as HTMLElement | null;
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === "TEXTAREA" || tag === "INPUT" || el.isContentEditable;
 }
 
 /** Install keyboard listeners. Returns a cleanup function. */

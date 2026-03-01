@@ -1,0 +1,295 @@
+' -- Asteroids -------------------------------------------------------
+' Ship rotates with encoder, thrusts with BTN, wraps at screen edges.
+' Fire bullets with ENC_BTN; bullets destroy asteroids.
+' Large->2 medium, medium->2 small, small->gone.
+
+' -- Graphics DATA ---------------------------------------------------
+' Ship vector data (triangle outline, 3 segments in 4.4 signed fixed-point)
+DATA ship_vecs, 3, $00,$D0,$E0,$20, $E0,$20,$20,$20, $20,$20,$00,$D0
+
+' Bullet bitmap (2x2 filled square)
+DATA bullet_bmp, $C0, $C0
+
+' Asteroid vector data
+' Large (5 segments, ~15x15)
+DATA ast_large, 5, $00,$90,$60,$E0, $60,$E0,$50,$50, $50,$50,$B0,$50, $B0,$50,$A0,$E0, $A0,$E0,$00,$90
+' Medium (5 segments, ~9x9)
+DATA ast_med, 5, $00,$C0,$40,$F0, $40,$F0,$30,$30, $30,$30,$D0,$30, $D0,$30,$C0,$F0, $C0,$F0,$00,$C0
+' Small (4 segments, ~5x5)
+DATA ast_small, 4, $00,$E0,$20,$00, $20,$00,$00,$20, $00,$20,$E0,$00, $E0,$00,$00,$E0
+
+' Ship icon for lives HUD (5x5 row-aligned)
+DATA ship_icon, $20, $50, $50, $88, $F8
+
+' -- Array for asteroid sizes (slots 5-31 = 27 entries) ---------------
+DIM sizes(27)
+
+' ====================================================================
+' Subroutines
+' ====================================================================
+
+SUB init_game()
+  ship_vx = 0
+  ship_vy = 0
+  cooldown = 0
+  game_state = 0
+  ast_count = 0
+  invincible = 0
+  next_bullet = 1
+  lives = 3
+  score = 0
+  wave = 0
+
+  SPRITE 0, ship_vecs, 7, 7, 62, 30, SPR_VECTOR, 0, 0, EDGE_WRAP
+  SPR_GROUP 0, 1, 2
+  SPR_COLL 0, COLL_DETECT
+
+  FOR i = 0 TO 26
+    sizes(i) = 0
+  NEXT
+  spawn_wave
+END SUB
+
+SUB check_collisions()
+  ' Check if ship was hit by asteroid (skip if invincible)
+  IF invincible = 0 THEN
+    hit_result = SPR_HIT(0)
+    IF hit_result AND 4 THEN
+      lives = lives - 1
+      IF lives = 0 THEN
+        game_state = 1
+      ELSE
+        ' Respawn ship
+        SPR_POS 0, 62, 30
+        SPR_VEL 0, 0, 0
+        ship_vx = 0
+        ship_vy = 0
+        SPR_ROT 0, 0, 0
+        invincible = 240
+      END IF
+    END IF
+  END IF
+
+  ' Scan asteroid slots 5-31 for bullet hits
+  FOR slot = 5 TO 31
+    IF sizes(slot - 5) <> 0 THEN
+      hit_result = SPR_HIT(slot)
+      IF hit_result AND 4 THEN
+        ' Verify collider is a bullet (slot 1-4)
+        hit_index = hit_result SHR 8
+        IF hit_index >= 1 THEN
+          IF hit_index < 5 THEN
+            ' Hit! Get position before destroying
+            ax, ay = SPR_GET(slot)
+            old_size = sizes(slot - 5)
+
+            ' Clear size and destroy sprite
+            sizes(slot - 5) = 0
+            SPR_OFF slot
+            ast_count = ast_count - 1
+
+            ' Add score
+            IF old_size = 1 THEN
+              score = score + 100
+            ELSEIF old_size = 2 THEN
+              score = score + 50
+            ELSE
+              score = score + 25
+            END IF
+
+            ' Split if not small (size < 3)
+            IF old_size < 3 THEN
+              spawn_child old_size + 1, ax - 3, ay
+              spawn_child old_size + 1, ax + 3, ay
+            END IF
+          END IF
+        END IF
+      END IF
+    END IF
+  NEXT
+END SUB
+
+SUB spawn_child(sc_size, sc_x, sc_y)
+  ' Find free slot 5-31
+  FOR fslot = 5 TO 31
+    IF sizes(fslot - 5) = 0 THEN
+      ' Pick vector addr + bbox by size
+      IF sc_size = 1 THEN
+        sc_addr = ast_large
+        sc_bbox = 15
+      ELSEIF sc_size = 2 THEN
+        sc_addr = ast_med
+        sc_bbox = 9
+      ELSE
+        sc_addr = ast_small
+        sc_bbox = 5
+      END IF
+
+      ' Random velocity -18..18
+      rvx = (RAND() MOD 37) - 18
+      rvy = (RAND() MOD 37) - 18
+
+      SPRITE fslot, sc_addr, sc_bbox, sc_bbox, sc_x, sc_y, SPR_VECTOR, rvx, rvy, EDGE_WRAP
+      SPR_GROUP fslot, 2, 4
+      SPR_COLL fslot, COLL_DETECT
+
+      ' Random angle + random rotSpeed
+      rangle = RAND() AND 255
+      rspeed = (RAND() MOD 81) - 40
+      SPR_ROT fslot, rangle, rspeed
+
+      sizes(fslot - 5) = sc_size
+      ast_count = ast_count + 1
+      EXIT FOR
+    END IF
+  NEXT
+END SUB
+
+SUB spawn_wave()
+  wave = wave + 1
+  wcount = wave + 3
+  IF wcount > 27 THEN wcount = 27
+
+  FOR wi = 0 TO wcount - 1
+    ' Random x: edge (5 or 110)
+    IF RAND() MOD 2 = 0 THEN
+      wx = 110
+    ELSE
+      wx = 5
+    END IF
+
+    spawn_child 1, wx, (RAND() MOD 50) + 5
+  NEXT
+END SUB
+
+SUB draw_hud()
+  ' Draw score at top-left
+  TEXT_NUM score, 1, 1
+
+  ' Draw lives icons at top-right
+  FOR li = 0 TO lives - 1
+    lx = 122 - li * 6
+    BLIT ship_icon, lx, 1, 5, 5
+  NEXT
+END SUB
+
+' -- Main program -----------------------------------------------------
+DO
+  init_game
+
+  ' -- Game loop -------------------------------------------------------
+  DO WHILE game_state = 0
+    check_collisions
+
+    ' Check if all asteroids destroyed -> next wave
+    IF ast_count = 0 THEN spawn_wave
+
+    ' -- Invincibility flash -------------------------------------------
+    IF invincible > 0 THEN
+      invincible = invincible - 1
+      SPR_COLL 0, COLL_NONE
+
+      ' Flash: hide ship when (timer AND 4) <> 0
+      IF invincible AND 8 THEN
+        SPR_VIS 0, 0
+      ELSE
+        SPR_VIS 0, 1
+      END IF
+    ELSE
+      ' Ensure ship visible + collision on
+      SPR_VIS 0, 1
+      SPR_COLL 0, COLL_DETECT
+    END IF
+
+    inp = INPUT()
+
+    ' -- Handle rotation -----------------------------------------------
+    IF inp AND INPUT_ENC_CW THEN
+      angle = SPR_GETROT(0)
+      angle = (angle + 4) AND 255
+      SPR_ROT 0, angle, 0
+    END IF
+
+    IF inp AND INPUT_ENC_CCW THEN
+      angle = SPR_GETROT(0)
+      angle = (angle - 4) AND 255
+      SPR_ROT 0, angle, 0
+    END IF
+
+    ' -- Handle thrust (BTN) -------------------------------------------
+    IF inp AND INPUT_BTN THEN
+      thrust_angle = (SPR_GETROT(0) + 192) AND 255
+
+      cos_val = COS(thrust_angle)
+      IF cos_val >= 128 THEN cos_val = cos_val - 256
+      ship_vx = ship_vx + FX_MUL(cos_val, 2, 5)
+
+      sin_val = SIN(thrust_angle)
+      IF sin_val >= 128 THEN sin_val = sin_val - 256
+      ship_vy = ship_vy + FX_MUL(sin_val, 2, 5)
+    END IF
+
+    ' -- Handle fire (ENC_BTN) -----------------------------------------
+    IF inp AND INPUT_ENC_BTN THEN
+      IF cooldown = 0 THEN
+        sx, sy = SPR_GET(0)
+        sx = sx + 2
+        sy = sy + 2
+
+        thrust_angle = (SPR_GETROT(0) + 192) AND 255
+
+        ' Bullet vx
+        cos_val = COS(thrust_angle)
+        IF cos_val < 128 THEN
+          bvx = cos_val SHR 1
+        ELSE
+          bvx = -((256 - cos_val) SHR 1)
+        END IF
+
+        ' Bullet vy
+        sin_val = SIN(thrust_angle)
+        IF sin_val < 128 THEN
+          bvy = sin_val SHR 1
+        ELSE
+          bvy = -((256 - sin_val) SHR 1)
+        END IF
+
+        bslot = next_bullet
+        next_bullet = (next_bullet MOD 4) + 1
+
+        SPRITE bslot, bullet_bmp, 2, 2, sx, sy, 0, bvx, bvy, EDGE_DESTROY
+        SPR_GROUP bslot, 4, 2
+        SPR_COLL bslot, COLL_DESTROY
+
+        cooldown = 16
+      END IF
+    END IF
+
+    ' -- Apply drag: velocity *= 250/256 --------------------------------
+    ship_vx = FX_MUL(ship_vx, 253, 8)
+    ship_vy = FX_MUL(ship_vy, 253, 8)
+
+    ' -- Convert 8.8 velocity to sprite velocity (/4) -------------------
+    SPR_VEL 0, ASHR(ship_vx, 2), ASHR(ship_vy, 2)
+
+    ' -- Decrement fire cooldown ----------------------------------------
+    IF cooldown > 0 THEN cooldown = cooldown - 1
+
+    draw_hud
+    YIELD
+  LOOP
+
+  ' -- Game over screen ------------------------------------------------
+  FOR gs = 0 TO 31
+    SPR_OFF gs
+  NEXT
+
+  DO
+    TEXT_LG "GAME OVER", 37, 20
+    TEXT_NUM score, 52, 35
+
+    IF INPUT() AND INPUT_ENC_BTN THEN EXIT DO
+
+    YIELD
+  LOOP
+LOOP

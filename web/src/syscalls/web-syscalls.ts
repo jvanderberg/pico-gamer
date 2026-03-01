@@ -237,7 +237,9 @@ export function createWebSyscallHandler(ctx: SyscallContext): SyscallHandler {
         const q = pop(vm);
         const b = toI16(pop(vm));
         const a = toI16(pop(vm));
-        push(vm, ((a * b) >> q) & 0xffff);
+        const result = a * b;
+        // Truncate toward zero (not floor) so negative values decay properly
+        push(vm, (result >= 0 ? result >> q : -((-result) >> q)) & 0xffff);
         break;
       }
 

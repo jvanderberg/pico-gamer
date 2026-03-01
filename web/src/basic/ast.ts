@@ -113,7 +113,6 @@ export interface GotoStmt {
   label: string;
 }
 
-
 export interface LabelStmt {
   kind: "label";
   name: string;

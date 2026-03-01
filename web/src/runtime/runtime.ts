@@ -21,6 +21,10 @@ export interface RuntimeState {
   lastFrameTime: number;
   accumulator: number;
   needsClear: boolean;
+  fps: number;
+  fpsAccum: number;
+  fpsFrames: number;
+  fpsLastUpdate: number;
   onStatusUpdate: () => void;
 }
 
@@ -45,12 +49,16 @@ export function createRuntime(
     lastFrameTime: 0,
     accumulator: 0,
     needsClear: true,
+    fps: 0,
+    fpsAccum: 0,
+    fpsFrames: 0,
+    fpsLastUpdate: 0,
     onStatusUpdate,
   };
 }
 
-/** Execute one game frame (VM + sprites + render). Returns false on HALT. */
-function execGameFrame(rt: RuntimeState): boolean {
+/** Execute one game frame (VM + sprites + optional render). Returns false on HALT. */
+function execGameFrame(rt: RuntimeState, render: boolean): boolean {
   clearFB(rt.fb);
   rt.syscallCtx.yieldRequested = false;
   let cycles = 0;
@@ -60,7 +68,7 @@ function execGameFrame(rt: RuntimeState): boolean {
       updateSprites(rt.syscallCtx.sprites, rt.syscallCtx.walls, FRAME_DT, rt.vm.memory);
       runHitCallbacks(rt.syscallCtx.sprites, rt.vm, rt.syscallHandler);
       drawSprites(rt.syscallCtx.sprites, rt.vm.memory, rt.fb);
-      renderToCanvas(rt.fb, rt.canvasCtx, rt.scale);
+      if (render) renderToCanvas(rt.fb, rt.canvasCtx, rt.scale);
       return false;
     }
     cycles++;
@@ -69,7 +77,7 @@ function execGameFrame(rt: RuntimeState): boolean {
   updateSprites(rt.syscallCtx.sprites, rt.syscallCtx.walls, FRAME_DT, rt.vm.memory);
   runHitCallbacks(rt.syscallCtx.sprites, rt.vm, rt.syscallHandler);
   drawSprites(rt.syscallCtx.sprites, rt.vm.memory, rt.fb);
-  renderToCanvas(rt.fb, rt.canvasCtx, rt.scale);
+  if (render) renderToCanvas(rt.fb, rt.canvasCtx, rt.scale);
   return true;
 }
 
@@ -86,26 +94,40 @@ function runFrame(rt: RuntimeState): void {
   // Clamp elapsed to avoid spiral of death after tab-away or debugger pause
   rt.accumulator += Math.min(elapsed, FRAME_DT * 4);
 
+  // Update FPS counter (~once per second) based on rAF cadence
+  rt.fpsAccum += elapsed;
+  if (rt.fpsAccum >= 1) {
+    rt.fps = rt.fpsFrames / rt.fpsAccum;
+    rt.fpsFrames = 0;
+    rt.fpsAccum = 0;
+  }
+
   if (rt.accumulator < FRAME_DT) return;
 
-  // Run at most one game frame per rAF to keep rendering responsive.
-  // Any leftover accumulator carries forward for timing accuracy.
-  rt.accumulator -= FRAME_DT;
+  // Run game frames to catch up, cap at 4 to avoid spiral of death.
+  // Only render the last frame — intermediate frames are never displayed.
+  let frames = 0;
+  while (rt.accumulator >= FRAME_DT && frames < 4) {
+    rt.accumulator -= FRAME_DT;
+    rt.fpsFrames++;
+    frames++;
+    const isLast = rt.accumulator < FRAME_DT || frames >= 4;
 
-  try {
-    if (!execGameFrame(rt)) {
+    try {
+      if (!execGameFrame(rt, isLast)) {
+        rt.running = false;
+        rt.onStatusUpdate();
+        cancelAnimationFrame(rt.animFrame!);
+        rt.animFrame = null;
+        return;
+      }
+    } catch (e) {
       rt.running = false;
       rt.onStatusUpdate();
       cancelAnimationFrame(rt.animFrame!);
       rt.animFrame = null;
-      return;
+      throw e;
     }
-  } catch (e) {
-    rt.running = false;
-    rt.onStatusUpdate();
-    cancelAnimationFrame(rt.animFrame!);
-    rt.animFrame = null;
-    throw e;
   }
 
   rt.onStatusUpdate();
