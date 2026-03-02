@@ -17,7 +17,7 @@ export function App() {
   const [editorWidth, setEditorWidth] = useState(50);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const { engineRef, status, stackText, error } = useEngine(canvasRef, scale);
+  const { engineRef, status, stackText, error, loading } = useEngine(canvasRef, scale);
 
   const handleDividerMouseDown = useCallback(
     (e: MouseEvent) => {
@@ -45,7 +45,7 @@ export function App() {
   // Load first demo on engine init
   const initDone = useRef(false);
   useEffect(() => {
-    if (initDone.current) return;
+    if (loading || initDone.current) return;
     const engine = engineRef.current;
     if (!engine) return;
     if (DEMOS.length > 0) {
@@ -57,7 +57,7 @@ export function App() {
       }
     }
     initDone.current = true;
-  }, [engineRef, status]); // status change signals engine is ready
+  }, [engineRef, loading]); // loading=false signals engine is ready
 
   const handleSourceChange = useCallback((newSource: string) => {
     setSource(newSource);

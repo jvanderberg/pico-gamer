@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import { tokenize } from "../src/basic/lexer.ts";
 import { TokenType } from "../src/basic/tokens.ts";
 import { parse } from "../src/basic/parser.ts";
-import { generate } from "../src/basic/codegen.ts";
 import { compile, isCompileError } from "../src/basic/compiler.ts";
 import { assemble, isError } from "../src/assembler/assembler.ts";
 import { createHarness } from "../src/test-harness.ts";
@@ -21,8 +20,8 @@ function compileOk(source: string): string {
 }
 
 /** Compile BASIC → assembly → bytecode, load into harness. */
-function loadBasic(source: string) {
-  const h = createHarness();
+async function loadBasic(source: string) {
+  const h = await createHarness();
   const asm = compileOk(source);
   h.load(asm);
   return h;
@@ -553,8 +552,8 @@ describe("Integration", () => {
     expect(isError(result)).toBe(false);
   });
 
-  it("variable assignment stores and loads correctly", () => {
-    const h = loadBasic("x = 42 : y = x");
+  it("variable assignment stores and loads correctly", async () => {
+    const h = await loadBasic("x = 42 : y = x");
     h.frame();
     // Both x and y should be 42 — we can verify by reading from memory
     // The var addresses start at 0xC100
@@ -562,33 +561,33 @@ describe("Integration", () => {
     expect(h.read16(0xc102)).toBe(42); // y
   });
 
-  it("arithmetic expressions work correctly", () => {
-    const h = loadBasic("x = 3 + 4 * 2");
+  it("arithmetic expressions work correctly", async () => {
+    const h = await loadBasic("x = 3 + 4 * 2");
     h.frame();
     expect(h.read16(0xc100)).toBe(11); // 3 + (4*2) = 11
   });
 
-  it("comparison operators work", () => {
-    const h = loadBasic("x = 5 < 10 : y = 10 < 5");
+  it("comparison operators work", async () => {
+    const h = await loadBasic("x = 5 < 10 : y = 10 < 5");
     h.frame();
     expect(h.read16(0xc100)).toBe(1); // true
     expect(h.read16(0xc102)).toBe(0); // false
   });
 
-  it("IF/THEN single-line works", () => {
-    const h = loadBasic("x = 5\nIF x = 5 THEN y = 1");
+  it("IF/THEN single-line works", async () => {
+    const h = await loadBasic("x = 5\nIF x = 5 THEN y = 1");
     h.frame();
     expect(h.read16(0xc102)).toBe(1);
   });
 
-  it("IF/THEN/ELSE single-line works", () => {
-    const h = loadBasic("x = 3\nIF x = 5 THEN y = 1 ELSE y = 2");
+  it("IF/THEN/ELSE single-line works", async () => {
+    const h = await loadBasic("x = 3\nIF x = 5 THEN y = 1 ELSE y = 2");
     h.frame();
     expect(h.read16(0xc102)).toBe(2);
   });
 
-  it("block IF/ELSE works", () => {
-    const h = loadBasic(`
+  it("block IF/ELSE works", async () => {
+    const h = await loadBasic(`
       x = 10
       IF x > 5 THEN
         y = 1
@@ -601,8 +600,8 @@ describe("Integration", () => {
     expect(h.read16(0xc102)).toBe(1);
   });
 
-  it("FOR loop sums correctly", () => {
-    const h = loadBasic(`
+  it("FOR loop sums correctly", async () => {
+    const h = await loadBasic(`
       sum = 0
       FOR i = 1 TO 5
         sum = sum + i
@@ -614,8 +613,8 @@ describe("Integration", () => {
     expect(h.read16(0xc100)).toBe(15);
   });
 
-  it("FOR loop with STEP works", () => {
-    const h = loadBasic(`
+  it("FOR loop with STEP works", async () => {
+    const h = await loadBasic(`
       sum = 0
       FOR i = 0 TO 10 STEP 2
         sum = sum + 1
@@ -626,8 +625,8 @@ describe("Integration", () => {
     expect(h.read16(0xc100)).toBe(6);
   });
 
-  it("DO/LOOP counts correctly", () => {
-    const h = loadBasic(`
+  it("DO/LOOP counts correctly", async () => {
+    const h = await loadBasic(`
       x = 0
       DO
         x = x + 1
@@ -638,8 +637,8 @@ describe("Integration", () => {
     expect(h.read16(0xc100)).toBe(5);
   });
 
-  it("DO WHILE loop works", () => {
-    const h = loadBasic(`
+  it("DO WHILE loop works", async () => {
+    const h = await loadBasic(`
       x = 0
       DO WHILE x < 3
         x = x + 1
@@ -649,8 +648,8 @@ describe("Integration", () => {
     expect(h.read16(0xc100)).toBe(3);
   });
 
-  it("DO/LOOP UNTIL works", () => {
-    const h = loadBasic(`
+  it("DO/LOOP UNTIL works", async () => {
+    const h = await loadBasic(`
       x = 0
       DO
         x = x + 1
@@ -660,8 +659,8 @@ describe("Integration", () => {
     expect(h.read16(0xc100)).toBe(5);
   });
 
-  it("CONST is used as immediate value", () => {
-    const h = loadBasic(`
+  it("CONST is used as immediate value", async () => {
+    const h = await loadBasic(`
       CONST SIZE = 10
       x = SIZE
     `);
@@ -669,8 +668,8 @@ describe("Integration", () => {
     expect(h.read16(0xc100)).toBe(10);
   });
 
-  it("built-in constants resolve to correct values", () => {
-    const h = loadBasic(`
+  it("built-in constants resolve to correct values", async () => {
+    const h = await loadBasic(`
       x = EDGE_BOUNCE
       y = INPUT_RIGHT
       z = SPR_VECTOR
@@ -681,8 +680,8 @@ describe("Integration", () => {
     expect(h.read16(0xc104)).toBe(4);  // SPR_VECTOR
   });
 
-  it("user CONST overrides built-in constant", () => {
-    const h = loadBasic(`
+  it("user CONST overrides built-in constant", async () => {
+    const h = await loadBasic(`
       CONST EDGE_BOUNCE = 42
       x = EDGE_BOUNCE
     `);
@@ -690,8 +689,8 @@ describe("Integration", () => {
     expect(h.read16(0xc100)).toBe(42);
   });
 
-  it("nested IF works", () => {
-    const h = loadBasic(`
+  it("nested IF works", async () => {
+    const h = await loadBasic(`
       x = 5
       y = 10
       IF x = 5 THEN
@@ -705,8 +704,8 @@ describe("Integration", () => {
     expect(h.read16(0xc104)).toBe(1);
   });
 
-  it("ELSEIF works", () => {
-    const h = loadBasic(`
+  it("ELSEIF works", async () => {
+    const h = await loadBasic(`
       x = 2
       IF x = 1 THEN
         y = 10
@@ -721,14 +720,14 @@ describe("Integration", () => {
     expect(h.read16(0xc102)).toBe(20);
   });
 
-  it("bitwise AND works in expressions", () => {
-    const h = loadBasic("x = $FF AND $0F");
+  it("bitwise AND works in expressions", async () => {
+    const h = await loadBasic("x = $FF AND $0F");
     h.frame();
     expect(h.read16(0xc100)).toBe(0x0f);
   });
 
-  it("GOTO works", () => {
-    const h = loadBasic(`
+  it("GOTO works", async () => {
+    const h = await loadBasic(`
       x = 1
       GOTO skip
       x = 99
@@ -741,8 +740,8 @@ describe("Integration", () => {
     expect(h.read16(0xc102)).toBe(1);
   });
 
-  it("SUB call works like GOSUB", () => {
-    const h = loadBasic(`
+  it("SUB call works like GOSUB", async () => {
+    const h = await loadBasic(`
       SUB inc()
         x = x + 1
       END SUB
@@ -755,8 +754,8 @@ describe("Integration", () => {
     expect(h.read16(0xc100)).toBe(3);
   });
 
-  it("SUB with parameters works", () => {
-    const h = loadBasic(`
+  it("SUB with parameters works", async () => {
+    const h = await loadBasic(`
       SUB addTwo(a, b)
         result = a + b
       END SUB
@@ -767,8 +766,8 @@ describe("Integration", () => {
     expect(h.read16(0xc000)).toBe(30);
   });
 
-  it("DIM and array access works", () => {
-    const h = loadBasic(`
+  it("DIM and array access works", async () => {
+    const h = await loadBasic(`
       DIM arr(3)
       arr(0) = 10
       arr(1) = 20
@@ -780,8 +779,8 @@ describe("Integration", () => {
     expect(h.read16(0xc000)).toBe(60);
   });
 
-  it("DATA block is accessible by name", () => {
-    const h = loadBasic(`
+  it("DATA block is accessible by name", async () => {
+    const h = await loadBasic(`
       DATA mydata, $41, $42, $43
       x = PEEK(mydata)
     `);
@@ -790,8 +789,8 @@ describe("Integration", () => {
     expect(h.read16(0xc100)).toBe(0x41);
   });
 
-  it("POKE and PEEK work", () => {
-    const h = loadBasic(`
+  it("POKE and PEEK work", async () => {
+    const h = await loadBasic(`
       POKE $C000, 42
       x = PEEK($C000)
     `);
@@ -800,8 +799,8 @@ describe("Integration", () => {
     expect(h.read16(0xc100)).toBe(42);
   });
 
-  it("POKE16 and PEEK16 work", () => {
-    const h = loadBasic(`
+  it("POKE16 and PEEK16 work", async () => {
+    const h = await loadBasic(`
       POKE16 $C000, 1000
       x = PEEK16($C000)
     `);
@@ -810,8 +809,8 @@ describe("Integration", () => {
     expect(h.read16(0xc100)).toBe(1000);
   });
 
-  it("EXIT FOR breaks out of loop", () => {
-    const h = loadBasic(`
+  it("EXIT FOR breaks out of loop", async () => {
+    const h = await loadBasic(`
       x = 0
       FOR i = 1 TO 100
         x = x + 1
@@ -822,8 +821,8 @@ describe("Integration", () => {
     expect(h.read16(0xc100)).toBe(5);
   });
 
-  it("negative numbers work via two's complement", () => {
-    const h = loadBasic(`
+  it("negative numbers work via two's complement", async () => {
+    const h = await loadBasic(`
       x = 10
       x = x - 15
     `);
@@ -832,8 +831,8 @@ describe("Integration", () => {
     expect(h.read16(0xc100)).toBe(0xfffb);
   });
 
-  it("signed comparison with negative numbers works", () => {
-    const h = loadBasic(`
+  it("signed comparison with negative numbers works", async () => {
+    const h = await loadBasic(`
       x = 10 - 15
       IF x < 0 THEN y = 1
     `);
@@ -842,8 +841,8 @@ describe("Integration", () => {
     expect(h.read16(0xc102)).toBe(1);
   });
 
-  it("CLEAR syscall clears framebuffer", () => {
-    const h = loadBasic(`
+  it("CLEAR syscall clears framebuffer", async () => {
+    const h = await loadBasic(`
       RECT 0, 0, 10, 10
       CLEAR
       YIELD
@@ -852,8 +851,8 @@ describe("Integration", () => {
     expect(h.pixel(5, 5)).toBe(0);
   });
 
-  it("RECT draws a rectangle", () => {
-    const h = loadBasic(`
+  it("RECT draws a rectangle", async () => {
+    const h = await loadBasic(`
       RECT 10, 10, 4, 4
       YIELD
     `);
@@ -863,8 +862,8 @@ describe("Integration", () => {
     expect(h.pixel(9, 9)).toBe(0);
   });
 
-  it("PIXEL draws a pixel", () => {
-    const h = loadBasic(`
+  it("PIXEL draws a pixel", async () => {
+    const h = await loadBasic(`
       PIXEL 50, 30, 1
       YIELD
     `);
@@ -872,61 +871,61 @@ describe("Integration", () => {
     expect(h.pixel(50, 30)).toBe(1);
   });
 
-  it("OR expression works", () => {
-    const h = loadBasic("x = $F0 OR $0F");
+  it("OR expression works", async () => {
+    const h = await loadBasic("x = $F0 OR $0F");
     h.frame();
     expect(h.read16(0xc100)).toBe(0xff);
   });
 
-  it("XOR expression works", () => {
-    const h = loadBasic("x = $FF XOR $0F");
+  it("XOR expression works", async () => {
+    const h = await loadBasic("x = $FF XOR $0F");
     h.frame();
     expect(h.read16(0xc100)).toBe(0xf0);
   });
 
-  it("SHL and SHR work", () => {
-    const h = loadBasic("x = 1 SHL 4 : y = 16 SHR 2");
+  it("SHL and SHR work", async () => {
+    const h = await loadBasic("x = 1 SHL 4 : y = 16 SHR 2");
     h.frame();
     expect(h.read16(0xc100)).toBe(16);
     expect(h.read16(0xc102)).toBe(4);
   });
 
-  it("DIV and MOD work", () => {
-    const h = loadBasic("x = 10 DIV 3 : y = 10 MOD 3");
+  it("DIV and MOD work", async () => {
+    const h = await loadBasic("x = 10 DIV 3 : y = 10 MOD 3");
     h.frame();
     expect(h.read16(0xc100)).toBe(3);
     expect(h.read16(0xc102)).toBe(1);
   });
 
-  it("ASHR shifts positive values right", () => {
-    const h = loadBasic("x = ASHR(256, 2)");
+  it("ASHR shifts positive values right", async () => {
+    const h = await loadBasic("x = ASHR(256, 2)");
     h.frame();
     expect(h.read16(0xc100)).toBe(64); // 256 >> 2 = 64
   });
 
-  it("ASHR sign-extends negative values", () => {
-    const h = loadBasic("x = ASHR(-256, 2)");
+  it("ASHR sign-extends negative values", async () => {
+    const h = await loadBasic("x = ASHR(-256, 2)");
     h.frame();
     // -256 as i16 = 0xFF00, arithmetic >> 2 = -64 = 0xFFC0
     expect(h.read16(0xc100)).toBe(0xffc0);
   });
 
-  it("FX_MUL multiplies positive fixed-point values", () => {
-    const h = loadBasic("x = FX_MUL(256, 250, 8)");
+  it("FX_MUL multiplies positive fixed-point values", async () => {
+    const h = await loadBasic("x = FX_MUL(256, 250, 8)");
     h.frame();
     // (256 * 250) >> 8 = 64000 >> 8 = 250
     expect(h.read16(0xc100)).toBe(250);
   });
 
-  it("FX_MUL handles signed negative values", () => {
-    const h = loadBasic("x = FX_MUL(-256, 250, 8)");
+  it("FX_MUL handles signed negative values", async () => {
+    const h = await loadBasic("x = FX_MUL(-256, 250, 8)");
     h.frame();
     // (-256 * 250) >> 8 = -64000 >> 8 = -250 = 0xFF06
     expect(h.read16(0xc100)).toBe((-250) & 0xffff);
   });
 
-  it("FX_MUL handles two negative values", () => {
-    const h = loadBasic("x = FX_MUL(-256, -250, 8)");
+  it("FX_MUL handles two negative values", async () => {
+    const h = await loadBasic("x = FX_MUL(-256, -250, 8)");
     h.frame();
     // (-256 * -250) >> 8 = 64000 >> 8 = 250
     expect(h.read16(0xc100)).toBe(250);
@@ -948,8 +947,8 @@ describe("Example programs", () => {
     expect(isError(result)).toBe(false);
   });
 
-  it("bouncing dot runs without error", () => {
-    const h = loadBasic(`
+  it("bouncing dot runs without error", async () => {
+    const h = await loadBasic(`
       DATA dot_gfx, $80
       SPRITE 0, dot_gfx, 1, 1, 10, 5, 0, 64, 64, 2
       YIELD
@@ -989,8 +988,8 @@ describe("Example programs", () => {
     expect(isError(result)).toBe(false);
   });
 
-  it("CALLBACK receives slot and executes body on hit", () => {
-    const h = loadBasic(`
+  it("CALLBACK receives slot and executes body on hit", async () => {
+    const h = await loadBasic(`
       DATA gfx1, $80
       DATA gfx2, $80
 
@@ -1020,8 +1019,8 @@ describe("Example programs", () => {
     expect(h.read16(0xD002)).toBe(1); // callback executed
   });
 
-  it("tuple assign retrieves sprite position", () => {
-    const h = loadBasic(`
+  it("tuple assign retrieves sprite position", async () => {
+    const h = await loadBasic(`
       DATA dot_gfx, $80
       SPRITE 0, dot_gfx, 1, 1, 42, 17, 0, 0, 0, 0
       x, y = SPR_GET(0)
@@ -1033,8 +1032,8 @@ describe("Example programs", () => {
     expect(h.read16(0xc002)).toBe(17); // y
   });
 
-  it("SPR_VIS hides sprite from rendering", () => {
-    const h = loadBasic(`
+  it("SPR_VIS hides sprite from rendering", async () => {
+    const h = await loadBasic(`
       DATA gfx, $FF
       SPRITE 0, gfx, 8, 1, 0, 0, 0, 0, 0, 0
       SPR_VIS 0, 0
@@ -1045,8 +1044,8 @@ describe("Example programs", () => {
     expect(h.pixel(0, 0)).toBe(0);
   });
 
-  it("input test runs and draws initial rectangle", () => {
-    const h = loadBasic(`
+  it("input test runs and draws initial rectangle", async () => {
+    const h = await loadBasic(`
       x = 60 : y = 28
       DO
         inp = INPUT()
@@ -1069,14 +1068,8 @@ describe("Example programs", () => {
 // ── BLIT row-aligned format tests ───────────────────────────
 
 describe("BLIT row-aligned", () => {
-  it("renders all rows of a non-byte-aligned width sprite", () => {
-    // 5x5 ship icon: row-aligned (1 byte per row, 5 bits used)
-    // Row 0: ..#.. = 0x20
-    // Row 1: .#.#. = 0x50
-    // Row 2: .#.#. = 0x50
-    // Row 3: #...# = 0x88
-    // Row 4: ##### = 0xF8
-    const h = loadBasic(`
+  it("renders all rows of a non-byte-aligned width sprite", async () => {
+    const h = await loadBasic(`
       DATA icon, $20, $50, $50, $88, $F8
       BLIT icon, 10, 10, 5, 5
       YIELD
@@ -1103,11 +1096,8 @@ describe("BLIT row-aligned", () => {
     expect(h.pixel(15, 14)).toBe(0);
   });
 
-  it("byte-aligned blit reads correct number of bytes per row", () => {
-    // 8x2 sprite: 1 byte per row, 2 rows
-    // Row 0: ####.... = 0xF0
-    // Row 1: ....#### = 0x0F
-    const h = loadBasic(`
+  it("byte-aligned blit reads correct number of bytes per row", async () => {
+    const h = await loadBasic(`
       DATA pat, $F0, $0F
       BLIT pat, 0, 0, 8, 2
       YIELD

@@ -5,6 +5,7 @@ import path from "path";
 
 export default defineConfig({
   root: ".",
+  base: process.env.VITE_BASE ?? "/",
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
@@ -14,4 +15,8 @@ export default defineConfig({
   build: {
     outDir: "dist",
   },
+  optimizeDeps: {
+    exclude: ["./src/wasm/pico-vm.mjs"],
+  },
+  assetsInclude: ["**/*.wasm"],
 });

@@ -15,6 +15,7 @@ export function useEngine(canvasRef: React.RefObject<HTMLCanvasElement | null>, 
   const [status, setStatus] = useState<EngineStatus>(INITIAL_STATUS);
   const [stackText, setStackText] = useState("empty");
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const handleUpdate = useCallback((update: StatusUpdate) => {
     setStatus(update.status);
@@ -22,23 +23,42 @@ export function useEngine(canvasRef: React.RefObject<HTMLCanvasElement | null>, 
     setError(update.error);
   }, []);
 
-  // Create engine once canvas is ready
+  // Create engine once canvas is ready (async for WASM loading)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const engine = createEngine(ctx, scale, handleUpdate);
-    engineRef.current = engine;
+    let cancelled = false;
+
+    createEngine(ctx, scale, handleUpdate)
+      .then((engine) => {
+        if (cancelled) {
+          engine.cleanup();
+          return;
+        }
+        engineRef.current = engine;
+        setLoading(false);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.error("Failed to load WASM VM:", err);
+          setError(`Failed to load WASM VM: ${(err as Error).message}`);
+          setLoading(false);
+        }
+      });
 
     return () => {
-      engine.cleanup();
-      engineRef.current = null;
+      cancelled = true;
+      if (engineRef.current) {
+        engineRef.current.cleanup();
+        engineRef.current = null;
+      }
     };
     // Only create once on mount — scale changes are handled via engine.setScale()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canvasRef, handleUpdate]);
 
-  return { engineRef, status, stackText, error };
+  return { engineRef, status, stackText, error, loading };
 }

@@ -4,10 +4,11 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
+    "build:wasm": "bash ../wasm/build.sh",
+    "dev": "npm run build:wasm && vite",
+    "build": "npm run build:wasm && tsc && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "npm run build:wasm && vitest run"
   },
   "devDependencies": {
     "@codemirror/commands": "^6.10.2",

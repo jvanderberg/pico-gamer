@@ -169,7 +169,10 @@ void handleSyscall(uint8_t id, VMState& vm, void* ctxPtr) {
             uint16_t q = pop(vm);
             int16_t b = toSigned(pop(vm));
             int16_t a = toSigned(pop(vm));
-            push(vm, (uint16_t)(((int32_t)a * b) >> q) & 0xFFFF);
+            int32_t result = (int32_t)a * b;
+            // Truncate toward zero (not floor) so small negative values decay to 0
+            int32_t shifted = result >= 0 ? (result >> q) : -((-result) >> q);
+            push(vm, (uint16_t)(shifted & 0xFFFF));
             break;
         }
 

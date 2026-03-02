@@ -1,2 +1,7 @@
 node_modules/
 dist/
+web/src/wasm/pico-vm.mjs
+web/src/wasm/pico-vm.wasm
+web/public/pico-vm.wasm
+firmware/*/build/
+vm/.pio/

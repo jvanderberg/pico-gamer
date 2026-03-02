@@ -1,4 +1,4 @@
-import { Sys } from "../syscalls/web-syscalls.ts";
+import { Sys } from "../vm/syscall-ids.ts";
 
 export interface SyscallDef {
   id: number;
