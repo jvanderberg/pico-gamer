@@ -1,1 +1,1 @@
-- Before pushing, check `git status` for untracked files that are referenced by build scripts or source lists. Never push if the build depends on uncommitted files.
+- When asked to push, commit ALL modified and untracked files first — don't cherry-pick, don't ask, don't leave things behind. The only exception is files that should genuinely be gitignored (build artifacts, .env, etc.).
