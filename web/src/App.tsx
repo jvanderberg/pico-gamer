@@ -54,6 +54,8 @@ export function App() {
         setSource(src);
         setLanguage(detectLang(src));
         setSelectedDemo("0");
+        engine.assemble(src);
+        engine.run(false);
       }
     }
     initDone.current = true;
