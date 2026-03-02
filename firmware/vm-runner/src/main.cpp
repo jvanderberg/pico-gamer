@@ -27,6 +27,7 @@
 #include "display.h"
 #include "font.h"
 #include "sprites.h"
+#include "particles.h"
 #include "syscalls.h"
 #include "runtime.h"
 #include "memory.h"
@@ -237,6 +238,7 @@ static uint32_t menu_last_scan_ms = 0;
 static VMState         vm;
 static SpriteTable     sprites;
 static WallTable       walls;
+static ParticleTable   particles;
 static SyscallContext   game_ctx;
 static uint32_t        game_frame_count = 0;
 
@@ -432,7 +434,8 @@ static void start_game(int game_idx) {
     resetVM(vm);
     sprites = createSpriteTable();
     walls = createWallTable();
-    game_ctx = createSyscallContext(&fb, &sprites, &walls);
+    particles = createParticleTable();
+    game_ctx = createSyscallContext(&fb, &sprites, &walls, &particles);
 
     // Load game bytecode from FAT12
     GameEntry *g = &game_list[game_idx];
@@ -639,6 +642,7 @@ void setup() {
     vm = createVM();
     sprites = createSpriteTable();
     walls = createWallTable();
+    particles = createParticleTable();
 
     // Blank screen
     memset(draw_buf, 0, SH1106_BUF_SIZE);

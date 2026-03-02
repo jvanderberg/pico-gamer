@@ -2,6 +2,7 @@
 #include "vm.h"
 #include "display.h"
 #include "sprites.h"
+#include "particles.h"
 #include "syscalls.h"
 
 bool execGameFrame(VMState& vm, Framebuffer& fb, SyscallContext& ctx,
@@ -19,6 +20,10 @@ bool execGameFrame(VMState& vm, Framebuffer& fb, SyscallContext& ctx,
             updateSprites(sprites, walls, FP_SCALE, vm.memory);
             runHitCallbacks(sprites, vm, handleSyscall, &ctx);
             drawSprites(sprites, vm.memory, fb);
+            if (ctx.particles) {
+                updateParticles(*ctx.particles, ctx.rngState);
+                drawParticles(*ctx.particles, fb);
+            }
             swapBuffers(fb);
             return false;
         }
@@ -34,7 +39,13 @@ bool execGameFrame(VMState& vm, Framebuffer& fb, SyscallContext& ctx,
     // 5. Draw sprites
     drawSprites(sprites, vm.memory, fb);
 
-    // 6. Swap buffers
+    // 6. Update and draw particles
+    if (ctx.particles) {
+        updateParticles(*ctx.particles, ctx.rngState);
+        drawParticles(*ctx.particles, fb);
+    }
+
+    // 7. Swap buffers
     swapBuffers(fb);
 
     return true;

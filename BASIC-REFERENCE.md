@@ -703,7 +703,9 @@ Each game frame proceeds in this order:
 6. **Edge behaviors** applied
 7. **Hit callbacks** invoked for any sprites with non-zero hitFlags
 8. **Sprites drawn** to framebuffer (active and visible sprites only)
-9. **Framebuffer rendered** to canvas
+9. **Particles updated** -- continuous emitters spawn, velocity/gravity applied, life decremented
+10. **Particles drawn** to framebuffer (on top of sprites)
+11. **Framebuffer rendered** to canvas
 
 ---
 
@@ -739,9 +741,102 @@ LOOP
 
 ---
 
-## 10. Input
+## 10. Particle System
 
-### 10.1 INPUT() Function
+The engine provides a native particle system for visual effects like explosions, rocket exhaust, and fireworks. It runs entirely in native code, so games get rich effects with minimal VM overhead -- one syscall to configure an emitter, one to trigger a burst.
+
+**4 emitters, 128 particles.** Particles are transient (no collision, no callbacks). They are drawn after sprites (on top).
+
+### 10.1 PFX_SET -- Configure an Emitter
+
+```basic
+PFX_SET slot, speed, life, spread, direction, gravity, flags
+```
+
+| Arg | Description |
+|---|---|
+| `slot` | Emitter slot (0--3) |
+| `speed` | Particle speed (0--255, same units as sprite velocity: 64 = 1 px/frame) |
+| `life` | Particle lifetime in frames (1--255) |
+| `spread` | Cone half-angle (0 = focused beam, 128 = full circle) |
+| `direction` | Center angle (0--255, same as sprite rotation: 0 = right, 64 = down, 128 = left, 192 = up) |
+| `gravity` | Y acceleration per frame (signed: positive = down, negative = up) |
+| `flags` | Emitter flags (see below) |
+
+### 10.2 PFX_POS -- Set Emitter Position
+
+```basic
+PFX_POS slot, x, y
+```
+
+Sets the source position for particles spawned from this emitter.
+
+### 10.3 PFX_BURST -- Spawn a Burst
+
+```basic
+PFX_BURST slot, count
+```
+
+Immediately spawns `count` particles from emitter `slot`. Particles that exceed the 128-particle pool are silently dropped.
+
+### 10.4 PFX_ON -- Continuous Emission
+
+```basic
+PFX_ON slot, rate
+```
+
+Sets the emitter to continuously spawn `rate` particles per frame. Set `rate` to 0 to stop.
+
+### 10.5 PFX_CLEAR -- Clear Particles
+
+```basic
+PFX_CLEAR slot
+```
+
+Clears emitter `slot` and kills all its particles. Use `PFX_CLEAR PFX_ALL` to clear all emitters and particles.
+
+### 10.6 Particle Flags
+
+| Constant | Value | Description |
+|---|---|---|
+| `PFX_2X2` | 4 | Draw particles as 2x2 pixels instead of 1x1 |
+| `PFX_BLACK` | 8 | Draw black particles (eraser effect) |
+| `PFX_SPEED_VAR` | 16 | Randomize speed +/- 25% |
+| `PFX_LIFE_VAR` | 32 | Randomize lifetime +/- 25% |
+| `PFX_ALL` | 255 | Used with PFX_CLEAR to clear all emitters |
+
+Combine with OR: `PFX_2X2 OR PFX_SPEED_VAR OR PFX_LIFE_VAR` = `52`.
+
+### 10.7 Particle Physics
+
+- Velocity uses the same fixed-point system as sprites (64 = 1 px/frame)
+- Gravity is applied every frame: `vy += gravity`
+- Particles flicker (alternate visible/invisible) in the last 3 frames of life for a fade effect
+- Particles have no collision detection -- they are purely visual
+
+### 10.8 Examples
+
+**Explosion:**
+
+```basic
+PFX_SET 0, 80, 20, 128, 0, 1, PFX_SPEED_VAR OR PFX_LIFE_VAR
+PFX_POS 0, 64, 32
+PFX_BURST 0, 30
+```
+
+**Rocket exhaust (continuous):**
+
+```basic
+PFX_SET 1, 40, 15, 10, 192, 0, PFX_LIFE_VAR
+PFX_POS 1, ship_x, ship_y + 4
+PFX_ON 1, 2
+```
+
+---
+
+## 11. Input
+
+### 11.1 INPUT() Function
 
 ```basic
 inp = INPUT()
@@ -751,7 +846,7 @@ Returns a 16-bit input word:
 - Low byte (`bits 0-7`): button bitfield.
 - High byte (`bits 8-15`): signed encoder delta (accumulated detents for this frame, `+` CW / `-` CCW).
 
-### 10.2 Input Constants
+### 11.2 Input Constants
 
 | Constant | Value | Bit | Input |
 |---|---|---|---|
@@ -766,7 +861,7 @@ Returns a 16-bit input word:
 | `INPUT_ENC_DELTA_SHIFT` | 8 | — | Right-shift amount to read signed encoder delta from INPUT() |
 | `INPUT_ENC_DELTA_MASK` | 65280 | — | Mask for encoder delta byte (`0xFF00`) |
 
-### 10.3 Testing Input
+### 11.3 Testing Input
 
 Use bitwise AND to test individual buttons:
 
@@ -790,9 +885,9 @@ angle = (angle + enc_delta * 4) AND 255
 
 ---
 
-## 11. Math and Utility Functions
+## 12. Math and Utility Functions
 
-### 11.1 RAND()
+### 12.1 RAND()
 
 ```basic
 x = RAND()
@@ -807,7 +902,7 @@ x = RAND() MOD 100         ' 0 to 99
 x = RAND() MOD 128         ' 0 to 127 (full screen X)
 ```
 
-### 11.2 TIME()
+### 12.2 TIME()
 
 ```basic
 t = TIME()
@@ -815,7 +910,7 @@ t = TIME()
 
 Returns milliseconds elapsed since program start, masked to 16 bits (wraps every ~65.5 seconds).
 
-### 11.3 SIN(angle)
+### 12.3 SIN(angle)
 
 ```basic
 s = SIN(angle)
@@ -830,7 +925,7 @@ Lookup-table sine function. Angle is 0--255 (256 steps = 360 degrees). Returns a
 
 The returned value represents `sin(angle) * 127`, stored as an unsigned byte. Values >= 128 represent negative results (use `IF val >= 128 THEN val = val - 256` to get the signed value).
 
-### 11.4 COS(angle)
+### 12.4 COS(angle)
 
 ```basic
 c = COS(angle)
@@ -838,7 +933,7 @@ c = COS(angle)
 
 Same as SIN but offset by 64 (90 degrees): `COS(angle) = SIN(angle + 64)`.
 
-### 11.5 ABS(value)
+### 12.5 ABS(value)
 
 ```basic
 x = ABS(y)
@@ -846,7 +941,7 @@ x = ABS(y)
 
 Returns the absolute value. If the value is negative (bit 15 set, i.e., >= 0x8000), it is negated.
 
-### 11.6 ASHR(value, bits)
+### 12.6 ASHR(value, bits)
 
 ```basic
 x = ASHR(value, bits)
@@ -859,7 +954,7 @@ x = ASHR(256, 2)       ' = 64 (positive: same as SHR)
 x = ASHR(-256, 2)      ' = -64 (sign preserved, stored as 0xFFC0)
 ```
 
-### 11.7 FX_MUL(a, b, q)
+### 12.7 FX_MUL(a, b, q)
 
 ```basic
 x = FX_MUL(a, b, q)
@@ -879,9 +974,9 @@ delta = FX_MUL(cos_val, 5, 5)
 
 ---
 
-## 12. Control Flow Syscalls
+## 13. Control Flow Syscalls
 
-### 12.1 YIELD
+### 13.1 YIELD
 
 ```basic
 YIELD
@@ -899,7 +994,7 @@ Signals the end of one frame of game logic. The runtime will:
 
 Every game loop **must** call YIELD once per frame. Without it, the VM runs until its 50,000-cycle budget is exhausted.
 
-### 12.2 HALT
+### 13.2 HALT
 
 ```basic
 HALT
@@ -909,7 +1004,7 @@ Stops the VM permanently. The program ends. (A HALT is also automatically append
 
 ---
 
-## 13. Tile System (Stubbed)
+## 14. Tile System (Stubbed)
 
 The following syscalls are defined but **not yet implemented** in the web emulator:
 
@@ -923,7 +1018,7 @@ These are reserved for future implementation.
 
 ---
 
-## 14. Built-in Constants Reference
+## 15. Built-in Constants Reference
 
 All of these constants are available without declaration:
 
@@ -968,11 +1063,21 @@ All of these constants are available without declaration:
 | `SPR_FLIPY` | 2 |
 | `SPR_VECTOR` | 4 |
 
+### Particle Flags
+
+| Name | Value |
+|---|---|
+| `PFX_ALL` | 255 |
+| `PFX_2X2` | 4 |
+| `PFX_BLACK` | 8 |
+| `PFX_SPEED_VAR` | 16 |
+| `PFX_LIFE_VAR` | 32 |
+
 ---
 
-## 15. VM Architecture
+## 16. VM Architecture
 
-### 15.1 Overview
+### 16.1 Overview
 
 BASIC programs are compiled through a three-stage pipeline:
 
@@ -980,7 +1085,7 @@ BASIC programs are compiled through a three-stage pipeline:
 2. **Assembly text** -- assembled to bytecode (two-pass assembler)
 3. **Bytecode** -- executed by the 16-bit stack VM
 
-### 15.2 Memory
+### 16.2 Memory
 
 - **64 KB** flat address space (`0x0000`--`0xFFFF`)
 - **Little-endian** byte order
@@ -989,18 +1094,18 @@ BASIC programs are compiled through a three-stage pipeline:
 - Arrays are allocated contiguously after regular variables
 - DATA blocks and string literals are placed in the data section (between the JMP to main and the main code)
 
-### 15.3 Stack
+### 16.3 Stack
 
 - Separate 256-entry operand stack (not in main memory)
 - 16-bit entries
 - Stack overflow or underflow halts the VM with an error
 
-### 15.4 Cycle Budget
+### 16.4 Cycle Budget
 
 - **50,000 cycles per frame** -- the VM executes up to this many instructions between YIELDs
 - **5,000 cycles per hit callback** invocation
 
-### 15.5 Opcodes
+### 16.5 Opcodes
 
 The VM supports the following opcodes. BASIC programs never need to use these directly, but they are listed for reference and debugging.
 
@@ -1083,7 +1188,7 @@ The VM supports the following opcodes. BASIC programs never need to use these di
 |---|---|---|---|
 | SYSCALL | 0x60 | u8 | Invoke syscall by ID |
 
-### 15.6 Program Structure (Generated)
+### 16.6 Program Structure (Generated)
 
 The compiler generates the following layout:
 
@@ -1112,7 +1217,7 @@ __main:                   ; Main program code
 
 ---
 
-## 16. Syscall Reference
+## 17. Syscall Reference
 
 This is the complete list of syscall IDs. BASIC programs call these through the language statements and functions documented above.
 
@@ -1150,12 +1255,17 @@ This is the complete list of syscall IDs. BASIC programs call these through the 
 | 0x4D | SPR_ROT | `SPR_ROT slot, angle, speed` | speed, angle, slot | -- |
 | 0x4E | SPR_GETROT | `SPR_GETROT(slot)` | slot | angle (0-255) |
 | 0x4F | SPR_VIS | `SPR_VIS slot, visible` | visible, slot | -- |
+| 0x50 | PFX_SET | `PFX_SET slot, speed, life, spread, dir, gravity, flags` | flags, gravity, dir, spread, life, speed, slot | -- |
+| 0x51 | PFX_POS | `PFX_POS slot, x, y` | y, x, slot | -- |
+| 0x52 | PFX_BURST | `PFX_BURST slot, count` | count, slot | -- |
+| 0x53 | PFX_ON | `PFX_ON slot, rate` | rate, slot | -- |
+| 0x54 | PFX_CLEAR | `PFX_CLEAR slot` | slot | -- |
 
 ---
 
-## 17. Complete Examples
+## 18. Complete Examples
 
-### 17.1 Bouncing Dot
+### 18.1 Bouncing Dot
 
 The simplest possible game -- a single pixel that bounces around the screen. The sprite engine handles all movement and drawing.
 
@@ -1169,7 +1279,7 @@ DO
 LOOP
 ```
 
-### 17.2 Input Test
+### 18.2 Input Test
 
 Move a block with the joystick.
 
@@ -1188,7 +1298,7 @@ DO
 LOOP
 ```
 
-### 17.3 Sprites with Collision Groups
+### 18.3 Sprites with Collision Groups
 
 Multiple sprites with walls, different collision groups, and a hit callback.
 
@@ -1229,7 +1339,7 @@ DO
 LOOP
 ```
 
-### 17.4 Starfield
+### 18.4 Starfield
 
 Dithered background with scrolling stars and bouncing balls. All movement is handled by the sprite engine -- zero per-frame CPU cost.
 

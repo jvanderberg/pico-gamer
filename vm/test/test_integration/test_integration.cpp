@@ -4,6 +4,7 @@
 #include "vm.h"
 #include "display.h"
 #include "sprites.h"
+#include "particles.h"
 #include "syscalls.h"
 #include "assembler.h"
 #include "memory.h"
@@ -12,6 +13,7 @@ static VMState vm;
 static Framebuffer fb;
 static SpriteTable sprites;
 static WallTable walls;
+static ParticleTable particles;
 static SyscallContext ctx;
 
 void setUp(void) {
@@ -19,7 +21,8 @@ void setUp(void) {
     fb = createFramebuffer();
     sprites = createSpriteTable();
     walls = createWallTable();
-    ctx = createSyscallContext(&fb, &sprites, &walls);
+    particles = createParticleTable();
+    ctx = createSyscallContext(&fb, &sprites, &walls, &particles);
 }
 void tearDown(void) {}
 
@@ -251,6 +254,74 @@ void test_signed_comparison(void) {
     TEST_ASSERT_EQUAL_UINT16(1, readU16(vm.memory, 0xC100));
 }
 
+void test_particle_burst_draws_pixels(void) {
+    // PFX_SET slot=0, speed=0, life=30, spread=0, dir=0, gravity=0, flags=0
+    // PFX_POS slot=0, x=64, y=32
+    // PFX_BURST slot=0, count=5
+    // YIELD
+    loadAsm(
+        // PFX_SET 0, 0, 30, 0, 0, 0, 0
+        "PUSH8 0\n"     // slot
+        "PUSH8 0\n"     // speed
+        "PUSH8 30\n"    // life
+        "PUSH8 0\n"     // spread
+        "PUSH8 0\n"     // direction
+        "PUSH8 0\n"     // gravity
+        "PUSH8 0\n"     // flags
+        "SYSCALL 0x50\n"
+        // PFX_POS 0, 64, 32
+        "PUSH8 0\n"     // slot
+        "PUSH8 64\n"    // x
+        "PUSH8 32\n"    // y
+        "SYSCALL 0x51\n"
+        // PFX_BURST 0, 5
+        "PUSH8 0\n"     // slot
+        "PUSH8 5\n"     // count
+        "SYSCALL 0x52\n"
+        // YIELD
+        "SYSCALL 0x06\n"
+        "HALT\n"
+    );
+    frame();
+    // After one frame: particles spawned at (64,32) with speed=0 should
+    // draw at exactly that pixel. Check the front buffer.
+    TEST_ASSERT_EQUAL_INT(1, getPixelFront(fb, 64, 32));
+}
+
+void test_particle_burst_moves_with_velocity(void) {
+    // Speed=64 direction=0 (right): particles should move right
+    // cos256(0)=256, vx = (64*256)/64 = 256 velocity units
+    // Per frame: x_fp += 256*4 = 1024 = 4 pixels in 8.8
+    loadAsm(
+        // PFX_SET 0, 64, 30, 0, 0, 0, 0
+        "PUSH8 0\n"     // slot
+        "PUSH8 64\n"    // speed
+        "PUSH8 30\n"    // life
+        "PUSH8 0\n"     // spread
+        "PUSH8 0\n"     // direction (0 = right)
+        "PUSH8 0\n"     // gravity
+        "PUSH8 0\n"     // flags
+        "SYSCALL 0x50\n"
+        // PFX_POS 0, 10, 10
+        "PUSH8 0\n"
+        "PUSH8 10\n"
+        "PUSH8 10\n"
+        "SYSCALL 0x51\n"
+        // PFX_BURST 0, 1
+        "PUSH8 0\n"
+        "PUSH8 1\n"
+        "SYSCALL 0x52\n"
+        // YIELD (particles update + draw happens here)
+        "SYSCALL 0x06\n"
+        "HALT\n"
+    );
+    frame();
+    // Particle spawned at x=10, moved right by 4px → pixel at x=14
+    TEST_ASSERT_EQUAL_INT(1, getPixelFront(fb, 14, 10));
+    // Original position should be empty (speed > 0, so it moved)
+    TEST_ASSERT_EQUAL_INT(0, getPixelFront(fb, 10, 10));
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_store_load_roundtrip);
@@ -265,5 +336,7 @@ int main(void) {
     RUN_TEST(test_two_frames);
     RUN_TEST(test_signed_arithmetic);
     RUN_TEST(test_signed_comparison);
+    RUN_TEST(test_particle_burst_draws_pixels);
+    RUN_TEST(test_particle_burst_moves_with_velocity);
     return UNITY_END();
 }
