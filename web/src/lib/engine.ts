@@ -98,13 +98,13 @@ function formatHexDump(vm: WasmVM, start: number, len: number): string {
   return lines.join("\n");
 }
 
-/** Render framebuffer (1024-byte packed 1-bit) onto an HTML canvas. */
+/** Render framebuffer (1024-byte packed 1-bit) onto an HTML canvas.
+ *  Always renders at native 128×64; CSS scaling handles display size. */
 function renderToCanvas(
   fbData: Uint8Array,
   ctx: CanvasRenderingContext2D,
-  scale: number,
 ): void {
-  const imgData = ctx.createImageData(SCREEN_W * scale, SCREEN_H * scale);
+  const imgData = ctx.createImageData(SCREEN_W, SCREEN_H);
   const pixels = imgData.data;
 
   for (let y = 0; y < SCREEN_H; y++) {
@@ -115,17 +115,11 @@ function renderToCanvas(
       const on = (fbData[byteIndex]! >>> bitOffset) & 1;
       const brightness = on ? 255 : 0;
 
-      for (let sy = 0; sy < scale; sy++) {
-        for (let sx = 0; sx < scale; sx++) {
-          const px = x * scale + sx;
-          const py = y * scale + sy;
-          const i = (py * SCREEN_W * scale + px) * 4;
-          pixels[i] = brightness;
-          pixels[i + 1] = brightness;
-          pixels[i + 2] = brightness;
-          pixels[i + 3] = 255;
-        }
-      }
+      const i = (y * SCREEN_W + x) * 4;
+      pixels[i] = brightness;
+      pixels[i + 1] = brightness;
+      pixels[i + 2] = brightness;
+      pixels[i + 3] = 255;
     }
   }
 
@@ -202,7 +196,7 @@ export async function createEngine(
   }
 
   function render(): void {
-    renderToCanvas(vm.getFramebuffer(), canvasCtx, scale);
+    renderToCanvas(vm.getFramebuffer(), canvasCtx);
   }
 
   /** Execute one game frame. Returns false on HALT. */
@@ -435,8 +429,8 @@ export async function createEngine(
 
     setScale(newScale: number) {
       const canvas = canvasCtx.canvas;
-      canvas.width = SCREEN_W * newScale;
-      canvas.height = SCREEN_H * newScale;
+      canvas.style.width = `${SCREEN_W * newScale}px`;
+      canvas.style.height = `${SCREEN_H * newScale}px`;
       scale = newScale;
       render();
     },
