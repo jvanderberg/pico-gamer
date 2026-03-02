@@ -1,0 +1,1 @@
+- Before pushing, check `git status` for untracked files that are referenced by build scripts or source lists. Never push if the build depends on uncommitted files.
