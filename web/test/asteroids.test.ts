@@ -2,6 +2,10 @@ import { describe, it, expect } from "vitest";
 import { createHarness } from "../src/test-harness.ts";
 import asteroidsSource from "../examples/asteroids.asm?raw";
 
+function inputWithEncDelta(delta: number, lowBits = 0): number {
+  return (lowBits & 0xff) | ((delta & 0xff) << 8);
+}
+
 /** Run the init phase (sprite setup). */
 async function initGame() {
   const h = await createHarness();
@@ -44,7 +48,7 @@ describe("asteroids — ship", () => {
   describe("rotation", () => {
     it("ENC_CW rotates clockwise (+9 angle steps)", async () => {
       const h = await initGame();
-      h.input.bits = 1 << 5; // ENC_CW
+      h.input.bits = inputWithEncDelta(1, 1 << 5);
       h.frame();
       h.input.bits = 0;
       expect(Math.round(h.sprites[0]!.angle)).toBe(9); // 0 + 9
@@ -52,7 +56,7 @@ describe("asteroids — ship", () => {
 
     it("ENC_CCW rotates counter-clockwise (-9 angle steps)", async () => {
       const h = await initGame();
-      h.input.bits = 1 << 6; // ENC_CCW
+      h.input.bits = inputWithEncDelta(-1, 1 << 6);
       h.frame();
       h.input.bits = 0;
       expect(Math.round(h.sprites[0]!.angle)).toBe(247); // (0 - 9) & 255 = 247
@@ -60,7 +64,7 @@ describe("asteroids — ship", () => {
 
     it("multiple rotations accumulate", async () => {
       const h = await initGame();
-      h.input.bits = 1 << 5; // CW
+      h.input.bits = inputWithEncDelta(1, 1 << 5);
       h.frame();
       h.frame();
       h.frame();
@@ -72,7 +76,7 @@ describe("asteroids — ship", () => {
     it("rotation wraps around 0/255 boundary", async () => {
       const h = await initGame();
       // Rotate CCW to wrap past 0
-      h.input.bits = 1 << 6; // CCW
+      h.input.bits = inputWithEncDelta(-1, 1 << 6);
       for (let i = 0; i < 3; i++) h.frame();
       h.input.bits = 0;
       // (0 - 9*3) & 255 = (-27) & 255 = 229
@@ -116,7 +120,7 @@ describe("asteroids — ship", () => {
       const h = await initGame();
 
       // Rotate CW to angle ~64 (pointing right): 9*7 = 63 ≈ 64
-      h.input.bits = 1 << 5; // CW
+      h.input.bits = inputWithEncDelta(1, 1 << 5);
       for (let i = 0; i < 7; i++) h.frame();
       h.input.bits = 0;
 
@@ -245,7 +249,7 @@ describe("asteroids — ship", () => {
       const h = await initGame();
 
       // Rotate CW to ~90° (angle 64): 9*7=63 ≈ 64
-      h.input.bits = 1 << 5;
+      h.input.bits = inputWithEncDelta(1, 1 << 5);
       for (let i = 0; i < 7; i++) h.frame();
       h.input.bits = 0;
 

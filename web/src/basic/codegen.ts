@@ -20,6 +20,8 @@ const BUILTIN_CONSTS: Record<string, number> = {
   INPUT_ENC_CW: 32,
   INPUT_ENC_CCW: 64,
   INPUT_ENC_BTN: 128,
+  INPUT_ENC_DELTA_SHIFT: 8,
+  INPUT_ENC_DELTA_MASK: 0xFF00,
 
   // Edge modes
   EDGE_NONE: 0,

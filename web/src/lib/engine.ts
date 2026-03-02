@@ -4,6 +4,7 @@ import {
   bindInput,
   pressInput,
   releaseInput,
+  consumeInputWord,
   INPUT_UP,
   INPUT_DOWN,
   INPUT_LEFT,
@@ -207,7 +208,7 @@ export async function createEngine(
 
   /** Execute one game frame. Returns false on HALT. */
   function execGameFrame(): boolean {
-    vm.setInput(input.bits);
+    vm.setInput(consumeInputWord(input));
     vm.setElapsedMs(((performance.now() - startTime) & 0xffff) >>> 0);
     return vm.execFrame();
   }
@@ -371,7 +372,7 @@ export async function createEngine(
         vm.clearFB();
         needsClear = false;
       }
-      vm.setInput(input.bits);
+      vm.setInput(consumeInputWord(input));
       vm.setElapsedMs(((performance.now() - startTime) & 0xffff) >>> 0);
       vm.step();
       if (vm.isYielded()) {

@@ -212,43 +212,30 @@ not_invincible:
 flash_done:
   SYSCALL 0x10          ; INPUT -> bits on stack
 
-  ; -- Handle rotation -----------------------------------------------
-  ; Check ENC_CW (bit 5) -> rotate clockwise (+9)
+  ; Extract signed encoder delta from INPUT high byte.
   DUP
-  PUSH8 32              ; 1 << 5
-  AND
-  JZ not_cw
-  ; Get current angle
+  PUSH8 8
+  SYSCALL 0x27          ; ASHR(input, 8) -> signed detent delta
+  STORE 0xD018          ; enc_delta
+
+  ; -- Handle rotation (single source of truth: encoder delta) -------
+  ; angle += enc_delta * 9
+  LOAD 0xD018
+  JZ no_rotate
   PUSH8 0
   SYSCALL 0x4e          ; SPR_GETROT -> angle
+  LOAD 0xD018
   PUSH8 9
-  ADD                   ; angle + 9
+  MUL
+  ADD
   PUSH16 255
   AND                   ; mask to 0-255
   STORE 0xD010          ; save new angle
   PUSH8 0               ; slot
-  LOAD 0xD010           ; angle
-  PUSH8 0               ; rotSpeed
-  SYSCALL 0x4d          ; SPR_ROT
-not_cw:
-
-  ; Check ENC_CCW (bit 6) -> rotate counter-clockwise (-9)
-  DUP
-  PUSH8 64              ; 1 << 6
-  AND
-  JZ not_ccw
-  PUSH8 0
-  SYSCALL 0x4e          ; SPR_GETROT -> angle
-  PUSH8 9
-  SUB                   ; angle - 9
-  PUSH16 255
-  AND                   ; mask to 0-255
-  STORE 0xD010
-  PUSH8 0               ; slot
   LOAD 0xD010
   PUSH8 0
   SYSCALL 0x4d          ; SPR_ROT
-not_ccw:
+no_rotate:
 
   ; -- Handle thrust (BTN = bit 4) -----------------------------------
   ; If BTN held: accelerate in facing direction

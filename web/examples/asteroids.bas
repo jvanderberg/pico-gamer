@@ -203,16 +203,11 @@ DO
 
     inp = INPUT()
 
-    ' -- Handle rotation -----------------------------------------------
-    IF inp AND INPUT_ENC_CW THEN
+    ' -- Handle rotation (use signed encoder delta from INPUT high byte) --
+    enc_delta = ASHR(inp, INPUT_ENC_DELTA_SHIFT)
+    IF enc_delta <> 0 THEN
       angle = SPR_GETROT(0)
-      angle = (angle + 4) AND 255
-      SPR_ROT 0, angle, 0
-    END IF
-
-    IF inp AND INPUT_ENC_CCW THEN
-      angle = SPR_GETROT(0)
-      angle = (angle - 4) AND 255
+      angle = (angle + enc_delta * 9) AND 255
       SPR_ROT 0, angle, 0
     END IF
 

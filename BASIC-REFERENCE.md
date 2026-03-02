@@ -747,7 +747,9 @@ LOOP
 inp = INPUT()
 ```
 
-Returns a bitfield of currently pressed buttons/directions.
+Returns a 16-bit input word:
+- Low byte (`bits 0-7`): button bitfield.
+- High byte (`bits 8-15`): signed encoder delta (accumulated detents for this frame, `+` CW / `-` CCW).
 
 ### 10.2 Input Constants
 
@@ -761,6 +763,8 @@ Returns a bitfield of currently pressed buttons/directions.
 | `INPUT_ENC_CW` | 32 | 5 | Rotary encoder clockwise |
 | `INPUT_ENC_CCW` | 64 | 6 | Rotary encoder counter-clockwise |
 | `INPUT_ENC_BTN` | 128 | 7 | Rotary encoder button |
+| `INPUT_ENC_DELTA_SHIFT` | 8 | — | Right-shift amount to read signed encoder delta from INPUT() |
+| `INPUT_ENC_DELTA_MASK` | 65280 | — | Mask for encoder delta byte (`0xFF00`) |
 
 ### 10.3 Testing Input
 
@@ -774,6 +778,14 @@ IF inp AND INPUT_LEFT THEN x = x - 1
 IF inp AND INPUT_RIGHT THEN x = x + 1
 IF inp AND INPUT_BTN THEN fire
 IF inp AND INPUT_ENC_BTN THEN action
+```
+
+Read full encoder movement (including multiple detents in one frame):
+
+```basic
+inp = INPUT()
+enc_delta = ASHR(inp, INPUT_ENC_DELTA_SHIFT)  ' signed: +CW / -CCW
+angle = (angle + enc_delta * 4) AND 255
 ```
 
 ---

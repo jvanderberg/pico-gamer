@@ -445,7 +445,10 @@ Any syscall ID not listed above logs a warning and does nothing (no stack effect
 
 ### 5.5 Input Bitfield
 
-The INPUT syscall (`0x10`) pushes a 16-bit value where the low 8 bits represent button states:
+The INPUT syscall (`0x10`) pushes a 16-bit value:
+
+- Low 8 bits: button states.
+- High 8 bits: signed encoder delta for the current frame (`+` CW / `-` CCW).
 
 | Bit | Value | Button |
 |-----|-------|--------|
@@ -459,6 +462,8 @@ The INPUT syscall (`0x10`) pushes a 16-bit value where the low 8 bits represent 
 | 7 | `0x80` | Encoder Button |
 
 A bit is 1 when the button is currently held, 0 when released.
+
+Encoder delta is stored as two's-complement `int8` in bits `15:8`. Games can extract it with arithmetic shift right by 8.
 
 ### 5.6 Edge / Collision Mode Constants
 
