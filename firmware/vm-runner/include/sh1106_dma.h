@@ -39,7 +39,7 @@ static uint8_t *draw_buf = sh_buf_a;   // game draws here
 static uint8_t *disp_buf = sh_buf_b;   // what's currently on the display
 static uint16_t dma_buf[DMA_BUF_SIZE];
 static int      dma_chan = -1;
-static volatile bool     dma_busy = false;
+static bool     dma_active = false;
 
 static void sh1106_cmd(uint8_t cmd) {
     uint8_t buf[2] = {0x00, cmd};
@@ -76,11 +76,6 @@ static int encode_i2c_write(uint16_t *dest, const uint8_t *data, int len) {
     return n;
 }
 
-static void dma_irq_handler(void) {
-    dma_hw->ints0 = 1u << dma_chan;
-    dma_busy = false;
-}
-
 static void dma_init_i2c(void) {
     dma_chan = dma_claim_unused_channel(true);
 
@@ -97,20 +92,18 @@ static void dma_init_i2c(void) {
         0,
         false
     );
-
-    dma_channel_set_irq0_enabled(dma_chan, true);
-    irq_set_exclusive_handler(DMA_IRQ_0, dma_irq_handler);
-    irq_set_enabled(DMA_IRQ_0, true);
 }
 
+// Poll for DMA completion + I2C drain (avoids IRQ conflicts with Arduino core)
 static void dma_wait(void) {
-    if (dma_busy) {
-        while (dma_busy) tight_loop_contents();
+    if (dma_active) {
+        dma_channel_wait_for_finish_blocking(dma_chan);
         // DMA done = TX FIFO fed, but I2C may still be clocking out bytes
         while (!(i2c_get_hw(I2C_PORT)->raw_intr_stat & I2C_IC_RAW_INTR_STAT_TX_EMPTY_BITS))
             tight_loop_contents();
         while (i2c_get_hw(I2C_PORT)->status & I2C_IC_STATUS_ACTIVITY_BITS)
             tight_loop_contents();
+        dma_active = false;
     }
 }
 
@@ -167,7 +160,7 @@ static void sh1106_flush_delta_dma(void) {
 
         dma_channel_set_read_addr(dma_chan, dma_buf, false);
         dma_channel_set_trans_count(dma_chan, pos, true);
-        dma_busy = true;
+        dma_active = true;
     }
 
     // Swap: draw_buf becomes the new display reference

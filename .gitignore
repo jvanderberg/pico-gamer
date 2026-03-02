@@ -4,4 +4,6 @@ web/src/wasm/pico-vm.mjs
 web/src/wasm/pico-vm.wasm
 web/public/pico-vm.wasm
 firmware/*/build/
-vm/.pio/
+.pio/
+.DS_Store
+**/.DS_Store
