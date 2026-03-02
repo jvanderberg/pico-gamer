@@ -18,7 +18,7 @@ Pico-Gamer is an RP2040-based handheld gaming platform with a web emulator. BASI
 | Screen | SH1106 1.3" OLED, 128x64 monochrome |
 | Joystick | KY-023 (4-direction + button click) |
 | Rotary encoder | CW, CCW, and button press |
-| Audio | SID-style 3-voice synthesizer (stubbed in web emulator) |
+| Audio | SID-style 6-voice synthesizer |
 
 ### Keyboard Mapping (Web Emulator)
 

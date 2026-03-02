@@ -1,10 +1,10 @@
 /**
- * SID-style 3-voice synthesizer running on the AudioWorklet thread.
+ * SID-style 6-voice synthesizer running on the AudioWorklet thread.
  *
  * Oscillators: pulse (variable width), sawtooth, triangle, noise (LFSR).
  * Per-voice ADSR envelope. Global 2-pole state-variable filter (LP/BP/HP).
  * SFX preset engine with sample-accurate timing.
- * TONE convenience (auto note-off timer on voice 0).
+ * TONE convenience (auto note-off timer on caller-specified voice).
  *
  * This file is self-contained (no imports) because AudioWorklet.addModule()
  * loads it in an isolated scope. SFX presets are sent via message on init.
@@ -70,7 +70,7 @@ interface FilterState {
   cutoff: number;     // 0..1 normalized
   resonance: number;  // 0..1 (damping = 1 - resonance)
   mode: number;       // 0=LP 1=BP 2=HP
-  routing: number;    // bitmask: bit 0=v0, bit 1=v1, bit 2=v2
+  routing: number;    // bitmask: bits 0-5 for voices 0-5
   lp: number;
   bp: number;
 }
@@ -85,6 +85,7 @@ interface SfxEngine {
 
 interface ToneTimer {
   active: boolean;
+  voice: number;
   samplesLeft: number;
 }
 
@@ -188,17 +189,20 @@ class SynthProcessor extends AudioWorkletProcessor {
   private voices: Voice[];
   private filter: FilterState;
   private masterVolume: number;
-  private sfx: SfxEngine;
+  private sfx: SfxEngine[];
   private tone: ToneTimer;
   private sfxPresets: SfxStep[][] = [];
 
   constructor() {
     super();
-    this.voices = [createVoice(), createVoice(), createVoice()];
+    this.voices = [createVoice(), createVoice(), createVoice(), createVoice(), createVoice(), createVoice()];
     this.filter = createFilter();
     this.masterVolume = 200 / 255; // sensible default
-    this.sfx = { active: false, voice: 2, preset: [], stepIndex: 0, sampleCounter: 0 };
-    this.tone = { active: false, samplesLeft: 0 };
+    this.sfx = [];
+    for (let i = 0; i < 6; i++) {
+      this.sfx.push({ active: false, voice: i, preset: [], stepIndex: 0, sampleCounter: 0 });
+    }
+    this.tone = { active: false, voice: 0, samplesLeft: 0 };
 
     this.port.onmessage = (e: MessageEvent) => {
       const msg = e.data;
@@ -216,7 +220,7 @@ class SynthProcessor extends AudioWorkletProcessor {
     switch (type) {
       case SYS_VOICE: {
         const [voice, waveform, freqHz, pw] = args;
-        if (voice! < 0 || voice! > 2) break;
+        if (voice! < 0 || voice! > 5) break;
         const v = this.voices[voice!]!;
         const wasOff = v.waveform === WAVE_OFF;
         v.waveform = waveform!;
@@ -237,7 +241,7 @@ class SynthProcessor extends AudioWorkletProcessor {
       }
       case SYS_ENVELOPE: {
         const [voice, a, d, s, r] = args;
-        if (voice! < 0 || voice! > 2) break;
+        if (voice! < 0 || voice! > 5) break;
         const v = this.voices[voice!]!;
         v.attack = paramToRate(a!, sr);
         v.decay = paramToRate(d!, sr);
@@ -247,7 +251,7 @@ class SynthProcessor extends AudioWorkletProcessor {
       }
       case SYS_NOTE_OFF: {
         const [voice] = args;
-        if (voice! < 0 || voice! > 2) break;
+        if (voice! < 0 || voice! > 5) break;
         const v = this.voices[voice!]!;
         if (v.envState !== ENV_OFF) v.envState = ENV_RELEASE;
         break;
@@ -265,8 +269,9 @@ class SynthProcessor extends AudioWorkletProcessor {
         break;
       }
       case SYS_TONE: {
-        const [freqHz, durationMs] = args;
-        const v = this.voices[0]!;
+        const [voice, freqHz, durationMs] = args;
+        if (voice! < 0 || voice! > 5) break;
+        const v = this.voices[voice!]!;
         v.waveform = WAVE_PULSE;
         v.phase = 0;
         v.phaseStep = freqToStep(freqHz!, sr);
@@ -278,26 +283,28 @@ class SynthProcessor extends AudioWorkletProcessor {
         v.envState = ENV_ATTACK;
         v.envLevel = 0;
         this.tone.active = true;
+        this.tone.voice = voice!;
         this.tone.samplesLeft = Math.round((durationMs! / 1000) * sr);
         break;
       }
       case SYS_SFX: {
-        const effectId = args[0]!;
-        if (effectId < 0 || effectId >= this.sfxPresets.length) break;
-        const preset = this.sfxPresets[effectId]!;
-        this.sfx.active = true;
-        this.sfx.voice = 2;
-        this.sfx.preset = preset;
-        this.sfx.stepIndex = 0;
-        this.sfx.sampleCounter = 0;
-        this.applySfxStep(preset[0]!);
+        const [effectId, voice] = args;
+        if (effectId! < 0 || effectId! >= this.sfxPresets.length) break;
+        if (voice! < 0 || voice! > 5) break;
+        const preset = this.sfxPresets[effectId!]!;
+        const eng = this.sfx[voice!]!;
+        eng.active = true;
+        eng.preset = preset;
+        eng.stepIndex = 0;
+        eng.sampleCounter = 0;
+        this.applySfxStep(eng, preset[0]!);
         break;
       }
     }
   }
 
-  private applySfxStep(step: SfxStep): void {
-    const v = this.voices[this.sfx.voice]!;
+  private applySfxStep(eng: SfxEngine, step: SfxStep): void {
+    const v = this.voices[eng.voice]!;
     const wasOff = v.waveform === WAVE_OFF;
     v.waveform = step.waveform;
     if (step.waveform === WAVE_OFF) {
@@ -332,23 +339,25 @@ class SynthProcessor extends AudioWorkletProcessor {
         this.tone.samplesLeft--;
         if (this.tone.samplesLeft <= 0) {
           this.tone.active = false;
-          const v = this.voices[0]!;
+          const v = this.voices[this.tone.voice]!;
           if (v.envState !== ENV_OFF) v.envState = ENV_RELEASE;
         }
       }
 
-      // SFX step advancement
-      if (this.sfx.active) {
-        this.sfx.sampleCounter++;
-        const nextIdx = this.sfx.stepIndex + 1;
-        if (nextIdx < this.sfx.preset.length) {
-          const nextStep = this.sfx.preset[nextIdx]!;
-          if (this.sfx.sampleCounter >= nextStep.delaySamples) {
-            this.sfx.sampleCounter = 0;
-            this.sfx.stepIndex = nextIdx;
-            this.applySfxStep(nextStep);
+      // SFX step advancement (one engine per voice)
+      for (let si = 0; si < 6; si++) {
+        const eng = this.sfx[si]!;
+        if (!eng.active) continue;
+        eng.sampleCounter++;
+        const nextIdx = eng.stepIndex + 1;
+        if (nextIdx < eng.preset.length) {
+          const nextStep = eng.preset[nextIdx]!;
+          if (eng.sampleCounter >= nextStep.delaySamples) {
+            eng.sampleCounter = 0;
+            eng.stepIndex = nextIdx;
+            this.applySfxStep(eng, nextStep);
             if (nextStep.waveform === WAVE_OFF) {
-              this.sfx.active = false;
+              eng.active = false;
             }
           }
         }
@@ -357,7 +366,7 @@ class SynthProcessor extends AudioWorkletProcessor {
       // Mix voices
       let filtered = 0;
       let dry = 0;
-      for (let vi = 0; vi < 3; vi++) {
+      for (let vi = 0; vi < 6; vi++) {
         const v = this.voices[vi]!;
         if (v.waveform === WAVE_OFF && v.envState === ENV_OFF) continue;
 
@@ -395,7 +404,7 @@ class SynthProcessor extends AudioWorkletProcessor {
       }
 
       // Master volume and clamp
-      mixed = mixed * this.masterVolume * 0.33;
+      mixed = mixed * this.masterVolume * 0.167;
       output[i] = Math.max(-1, Math.min(1, mixed));
     }
 

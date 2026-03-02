@@ -2,7 +2,7 @@
 
 ## Overview
 
-The audio system is a SID-inspired 3-voice synthesizer that runs identically on both targets:
+The audio system is a SID-inspired 6-voice synthesizer that runs identically on both targets:
 
 - **Pico**: Core 1 renders samples at 22kHz into PWM DAC
 - **Web**: `AudioWorklet` renders samples at 44.1kHz via Web Audio API
@@ -11,7 +11,7 @@ Same synth model, same binary data formats, same syscall interface. Sound effect
 
 ## Synthesizer Architecture
 
-### Per Voice (x3)
+### Per Voice (x6)
 
 | Component | Description |
 |---|---|
@@ -46,7 +46,7 @@ All audio syscalls live in the `0x30-0x3F` range. These are the VM syscall IDs �
 
 ```
 Stack: [voice, waveform, freq_hz, pulse_width]
-       voice:       0-2
+       voice:       0-5
        waveform:    0-4 (see waveform IDs)
        freq_hz:     frequency in Hz (16-bit, 0-65535)
        pulse_width: 0-255 duty cycle (128 = 50% square wave)
@@ -58,7 +58,7 @@ Setting `waveform = 0` silences the voice. Setting a new waveform restarts the o
 
 ```
 Stack: [voice, attack, decay, sustain, release]
-       voice:   0-2
+       voice:   0-5
        attack:  0-255 (0 = instant, 255 = ~2s ramp up)
        decay:   0-255 (0 = instant, 255 = ~2s ramp down to sustain)
        sustain: 0-255 (sustain amplitude level, 255 = full)
@@ -71,7 +71,7 @@ The envelope starts (gate on) when `SYS_VOICE` sets a non-zero waveform. It ente
 
 ```
 Stack: [voice]
-       voice: 0-2
+       voice: 0-5
 ```
 
 Triggers the release phase of the envelope without changing the oscillator. The voice fades according to its release parameter and then goes silent.
@@ -85,7 +85,7 @@ Stack: [cutoff, resonance, mode, routing]
        cutoff:    0-255 (maps to filter frequency, 0 = low, 255 = high)
        resonance: 0-255 (0 = flat, 255 = sharp peak at cutoff)
        mode:      0 = low-pass, 1 = band-pass, 2 = high-pass
-       routing:   bit mask — bit 0 = voice 0, bit 1 = voice 1, bit 2 = voice 2
+       routing:   bit mask — bits 0-5 route voices 0-5 through filter
                   unrouted voices bypass the filter
 ```
 
@@ -101,23 +101,23 @@ Stack: [volume]
 #### `SYS_TONE` (0x35) — Simple beep
 
 ```
-Stack: [freq_hz, duration_ms]
+Stack: [voice, freq_hz, duration_ms]
+       voice: 0-5
 ```
 
-Plays a pulse wave on voice 0 with a fast decay envelope for the given duration. Intended for simple UI feedback. Overrides any current voice 0 state.
+Plays a pulse wave on the specified voice with a fast decay envelope for the given duration. Intended for simple UI feedback. Overrides the current state of the chosen voice.
 
 ### Sound Effects
 
 #### `SYS_SFX` (0x36) — Play a preset effect
 
 ```
-Stack: [effect_id]
+Stack: [effect_id, voice]
        effect_id: 0-31
+       voice:     0-5
 ```
 
-Plays a built-in sound effect using voice 2 (or the least-recently-used voice if music is not playing). The effect is a pre-baked sequence of synth parameter changes executed by the audio thread with sample-accurate timing.
-
-Effects temporarily override one voice. If music is playing on voices 0-1, the SFX system claims voice 2. If no music is playing, it uses voice 0.
+Plays a built-in sound effect on the specified voice. The effect is a pre-baked sequence of synth parameter changes executed by the audio thread with sample-accurate timing. The game author controls which voice is used, avoiding contention with direct VOICE calls or TONE.
 
 ##### Built-in Effect Presets
 
@@ -209,8 +209,8 @@ VOLUME level
 ### Convenience
 
 ```basic
-TONE freq, duration
-SFX effect_id
+TONE voice, freq, duration
+SFX effect_id, voice
 ```
 
 ### Music — String Notation
@@ -387,9 +387,9 @@ Firmware `main.cpp` initializes Core 1 with the synth loop. Syscall handler in `
 
 ## Design Constraints
 
-- **3 voices max** — matches SID, keeps CPU budget low on Pico
+- **6 voices** — double the classic SID, still within CPU budget on Pico
 - **No sample playback** — everything is synthesized (no PCM buffers to store/stream)
 - **4 bytes per note** — compact enough for multi-voice songs in the VM's 32-64KB memory
 - **Sequencer on audio thread** — decoupled from frame rate, sample-accurate timing
-- **SFX preempts one voice** — simple priority scheme, no complex voice allocation
+- **SFX uses caller-specified voice** — game author controls voice allocation, no hidden contention
 - **Compile-time string parsing** — no string handling on the audio thread or in the VM

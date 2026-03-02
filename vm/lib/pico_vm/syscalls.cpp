@@ -508,24 +508,26 @@ void handleSyscall(uint8_t id, VMState& vm, void* ctxPtr) {
         }
 
         case SYS_TONE: {
-            uint16_t dur  = pop(vm);
-            uint16_t freq = pop(vm);
+            uint16_t dur   = pop(vm);
+            uint16_t freq  = pop(vm);
+            uint16_t voice = pop(vm);
             if (ctx.audio.count < AUDIO_CMD_MAX) {
                 AudioCmd& cmd = ctx.audio.cmds[ctx.audio.count++];
                 cmd.id = SYS_TONE;
-                cmd.argCount = 2;
-                cmd.args[0] = freq; cmd.args[1] = dur;
+                cmd.argCount = 3;
+                cmd.args[0] = voice; cmd.args[1] = freq; cmd.args[2] = dur;
             }
             break;
         }
 
         case SYS_SFX: {
+            uint16_t voice    = pop(vm);
             uint16_t effectId = pop(vm);
             if (ctx.audio.count < AUDIO_CMD_MAX) {
                 AudioCmd& cmd = ctx.audio.cmds[ctx.audio.count++];
                 cmd.id = SYS_SFX;
-                cmd.argCount = 1;
-                cmd.args[0] = effectId;
+                cmd.argCount = 2;
+                cmd.args[0] = effectId; cmd.args[1] = voice;
             }
             break;
         }

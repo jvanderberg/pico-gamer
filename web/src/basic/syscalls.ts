@@ -46,8 +46,8 @@ export const SYSCALL_STMTS: Record<string, SyscallDef> = {
   NOTEOFF:    { id: Sys.NOTE_OFF, argCount: 1,  returns: false },
   FILTER:     { id: Sys.FILTER,   argCount: 4,  returns: false },
   VOLUME:     { id: Sys.VOLUME,   argCount: 1,  returns: false },
-  TONE:       { id: Sys.TONE,     argCount: 2,  returns: false },
-  SFX:        { id: Sys.SFX,      argCount: 1,  returns: false },
+  TONE:       { id: Sys.TONE,     argCount: 3,  returns: false },
+  SFX:        { id: Sys.SFX,      argCount: 2,  returns: false },
   HALT:       { id: -1,            argCount: 0,  returns: false }, // special: emits HALT opcode
 };
 

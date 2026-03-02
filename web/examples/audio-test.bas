@@ -10,23 +10,23 @@ DO
   IF inp AND INPUT_BTN THEN
     IF state = 0 THEN
       ' Simple tone
-      TONE 440, 500
+      TONE 0, 440, 500
       state = 1
     ELSEIF state = 1 THEN
       ' Laser SFX
-      SFX SFX_LASER
+      SFX SFX_LASER, 5
       state = 2
     ELSEIF state = 2 THEN
       ' Explosion SFX
-      SFX SFX_EXPLODE
+      SFX SFX_EXPLODE, 5
       state = 3
     ELSEIF state = 3 THEN
       ' Pickup SFX
-      SFX SFX_PICKUP
+      SFX SFX_PICKUP, 5
       state = 4
     ELSEIF state = 4 THEN
       ' Coin SFX
-      SFX SFX_COIN
+      SFX SFX_COIN, 5
       state = 5
     ELSEIF state = 5 THEN
       ' Direct voice: saw wave with ADSR

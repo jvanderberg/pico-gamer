@@ -28,39 +28,39 @@ DO
     IF btnHeld = 0 THEN
       btnHeld = 1
       IF fx = 0 THEN
-        SFX SFX_LASER
+        SFX SFX_LASER, 5
       ELSEIF fx = 1 THEN
-        SFX SFX_EXPLODE
+        SFX SFX_EXPLODE, 5
       ELSEIF fx = 2 THEN
-        SFX SFX_PICKUP
+        SFX SFX_PICKUP, 5
       ELSEIF fx = 3 THEN
-        SFX SFX_JUMP
+        SFX SFX_JUMP, 5
       ELSEIF fx = 4 THEN
-        SFX SFX_HIT
+        SFX SFX_HIT, 5
       ELSEIF fx = 5 THEN
-        SFX SFX_BOUNCE
+        SFX SFX_BOUNCE, 5
       ELSEIF fx = 6 THEN
-        SFX SFX_POWERUP
+        SFX SFX_POWERUP, 5
       ELSEIF fx = 7 THEN
-        SFX SFX_DEATH
+        SFX SFX_DEATH, 5
       ELSEIF fx = 8 THEN
-        SFX SFX_COIN
+        SFX SFX_COIN, 5
       ELSEIF fx = 9 THEN
-        SFX SFX_BEEP
+        SFX SFX_BEEP, 5
       ELSEIF fx = 10 THEN
-        SFX SFX_THUD
+        SFX SFX_THUD, 5
       ELSEIF fx = 11 THEN
-        SFX SFX_ZAP
+        SFX SFX_ZAP, 5
       ELSEIF fx = 12 THEN
-        SFX SFX_ALARM
+        SFX SFX_ALARM, 5
       ELSEIF fx = 13 THEN
-        SFX SFX_CLICK
+        SFX SFX_CLICK, 5
       ELSEIF fx = 14 THEN
-        SFX SFX_WHOOSH
+        SFX SFX_WHOOSH, 5
       ELSEIF fx = 15 THEN
-        SFX SFX_BLIP
+        SFX SFX_BLIP, 5
       ELSEIF fx = 16 THEN
-        TONE 440, 300
+        TONE 0, 440, 300
       END IF
     END IF
   ELSE

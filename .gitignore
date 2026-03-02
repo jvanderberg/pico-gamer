@@ -7,3 +7,4 @@ firmware/*/build/
 .pio/
 .DS_Store
 **/.DS_Store
+reviews/

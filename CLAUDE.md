@@ -1,1 +1,3 @@
 - When asked to push, commit ALL modified and untracked files first — don't cherry-pick, don't ask, don't leave things behind. The only exception is files that should genuinely be gitignored (build artifacts, .env, etc.).
+- WASM build: `source ~/emsdk/emsdk_env.sh && bash wasm/build.sh`. Always rebuild WASM after changing C++ under `vm/lib/`. If the build tool isn't on PATH, search for it before declaring it unavailable.
+- Native tests: `pio test -e native` (from `vm/` directory).

@@ -70,7 +70,7 @@ SUB check_collisions()
       hx, hy = SPR_GET(0)
       PFX_POS 1, hx + 4, hy + 4
       PFX_BURST 1, 20
-      SFX SFX_DEATH
+      SFX SFX_DEATH, 5
       ' Kill thrust sound
       NOTEOFF 0
       NOTEOFF 1
@@ -113,16 +113,16 @@ SUB check_collisions()
             SPR_OFF slot
             ast_count = ast_count - 1
 
-            ' Add score + sound by size
+            ' Add score + sound by size (separate voices so they don't clobber)
             IF old_size = 1 THEN
               score = score + 100
-              SFX SFX_EXPLODE
+              SFX SFX_EXPLODE, 5
             ELSEIF old_size = 2 THEN
               score = score + 50
-              SFX SFX_HIT
+              SFX SFX_HIT, 4
             ELSE
               score = score + 25
-              SFX SFX_BLIP
+              SFX SFX_BLIP, 3
             END IF
 
             ' Split if not small (size < 3)
@@ -175,7 +175,7 @@ END SUB
 
 SUB spawn_wave()
   wave = wave + 1
-  IF wave > 1 THEN SFX SFX_POWERUP
+  IF wave > 1 THEN SFX SFX_POWERUP, 3
   wcount = wave + 3
   IF wcount > 27 THEN wcount = 27
 
@@ -312,7 +312,7 @@ DO
         SPRITE bslot, bullet_bmp, 2, 2, sx, sy, 0, bvx, bvy, EDGE_DESTROY
         SPR_GROUP bslot, 4, 2
         SPR_COLL bslot, COLL_DESTROY
-        SFX SFX_LASER
+        SFX SFX_LASER, 4
 
         cooldown = 16
       END IF

@@ -214,6 +214,13 @@ static BBox sprBBox(const Sprite& spr) {
     return { bx, by, ceilDiv256(maxX) - bx, ceilDiv256(maxY) - by };
 }
 
+// --- Vector sprite helpers ---
+
+static int16_t decode44(uint8_t byte) {
+    int8_t s = (byte >= 128) ? (int8_t)(byte - 256) : (int8_t)byte;
+    return (int16_t)(s * 16);
+}
+
 // --- Pixel-perfect collision helpers ---
 
 static bool spriteHasPixelAt(const Sprite& spr, const uint8_t* mem, int wx, int wy) {
@@ -248,6 +255,102 @@ static bool spriteHasPixelAt(const Sprite& spr, const uint8_t* mem, int wx, int 
     return ((mem[spr.addr + byteIdx] >> bitOff) & 1) != 0;
 }
 
+// --- Vector sprite collision rasterization ---
+
+static const int VEC_BUF_SIZE = 128;  // 4.4 endpoints cap sprites at ~23x23 rotated
+static uint8_t vecBufA[VEC_BUF_SIZE];
+static uint8_t vecBufB[VEC_BUF_SIZE];
+
+// Bresenham's line drawing into a packed-bit buffer (with clipping)
+static void drawLineToBuffer(uint8_t* buf, int bufW, int bufH,
+                             int x0, int y0, int x1, int y1) {
+    int dx = abs(x1 - x0);
+    int dy = -abs(y1 - y0);
+    int sx = (x0 < x1) ? 1 : -1;
+    int sy = (y0 < y1) ? 1 : -1;
+    int err = dx + dy;
+    int bytesPerRow = (bufW + 7) / 8;
+
+    for (;;) {
+        if (x0 >= 0 && x0 < bufW && y0 >= 0 && y0 < bufH) {
+            int byteIdx = y0 * bytesPerRow + (x0 >> 3);
+            int bitOff = 7 - (x0 & 7);
+            buf[byteIdx] |= (1 << bitOff);
+        }
+        if (x0 == x1 && y0 == y1) break;
+        int e2 = 2 * err;
+        if (e2 >= dy) { err += dy; x0 += sx; }
+        if (e2 <= dx) { err += dx; y0 += sy; }
+    }
+}
+
+// Rasterize vector sprite lines into scratch buffer using BBox local coords.
+// Returns false if the BBox exceeds the scratch buffer size.
+static bool rasterizeVectorSprite(const Sprite& spr, const uint8_t* mem,
+                                  uint8_t* buf, const BBox& bb) {
+    int bytesPerRow = (bb.w + 7) / 8;
+    int bufBytes = bytesPerRow * bb.h;
+    if (bufBytes <= 0 || bufBytes > VEC_BUF_SIZE) return false;
+    memset(buf, 0, bufBytes);
+
+    uint8_t n = mem[spr.addr];
+    int angle = (int)((spr.angle_fp >> FP_SHIFT) & 0xFF);
+    int cosA = cos256(angle);
+    int sinA = sin256(angle);
+    int cx = (int)(spr.x_fp >> FP_SHIFT) + (spr.width >> 1);
+    int cy = (int)(spr.y_fp >> FP_SHIFT) + (spr.height >> 1);
+
+    for (int i = 0; i < n; i++) {
+        int base = spr.addr + 1 + i * 4;
+        int16_t rx1 = decode44(mem[base]);
+        int16_t ry1 = decode44(mem[base + 1]);
+        int16_t rx2 = decode44(mem[base + 2]);
+        int16_t ry2 = decode44(mem[base + 3]);
+
+        int sx1 = cx + ((rx1 * cosA - ry1 * sinA) >> 16);
+        int sy1 = cy + ((rx1 * sinA + ry1 * cosA) >> 16);
+        int sx2 = cx + ((rx2 * cosA - ry2 * sinA) >> 16);
+        int sy2 = cy + ((rx2 * sinA + ry2 * cosA) >> 16);
+
+        drawLineToBuffer(buf, bb.w, bb.h,
+                         sx1 - (int)bb.x, sy1 - (int)bb.y,
+                         sx2 - (int)bb.x, sy2 - (int)bb.y);
+    }
+
+    // Scanline fill: for each row, fill between leftmost and rightmost outline
+    // pixel. This makes collision test the filled shape, not just the wireframe.
+    for (int row = 0; row < bb.h; row++) {
+        int rowOff = row * bytesPerRow;
+        int minX = -1, maxX = -1;
+        for (int col = 0; col < bb.w; col++) {
+            int byteIdx = rowOff + (col >> 3);
+            int bitOff = 7 - (col & 7);
+            if ((buf[byteIdx] >> bitOff) & 1) {
+                if (minX < 0) minX = col;
+                maxX = col;
+            }
+        }
+        if (minX >= 0 && maxX > minX) {
+            for (int col = minX; col <= maxX; col++) {
+                int byteIdx = rowOff + (col >> 3);
+                int bitOff = 7 - (col & 7);
+                buf[byteIdx] |= (1 << bitOff);
+            }
+        }
+    }
+
+    return true;
+}
+
+// Direct bit lookup in rasterized buffer (rotation already baked in)
+static bool bufHasPixelAt(const uint8_t* buf, int w, int h, int lx, int ly) {
+    if (lx < 0 || lx >= w || ly < 0 || ly >= h) return false;
+    int bytesPerRow = (w + 7) / 8;
+    int byteIdx = ly * bytesPerRow + (lx >> 3);
+    int bitOff = 7 - (lx & 7);
+    return ((buf[byteIdx] >> bitOff) & 1) != 0;
+}
+
 static bool pixelOverlap(const Sprite& a, const Sprite& b, const uint8_t* mem) {
     BBox ba = sprBBox(a);
     BBox bb = sprBBox(b);
@@ -259,22 +362,36 @@ static bool pixelOverlap(const Sprite& a, const Sprite& b, const uint8_t* mem) {
 
     if (ix0 >= ix1 || iy0 >= iy1) return false;
 
+    bool aVec = (a.flags & 4) != 0;
+    bool bVec = (b.flags & 4) != 0;
+
+    // Rasterize vector sprites to scratch buffers.
+    // If buffer overflows (huge sprite), conservatively assume collision.
+    if (aVec && !rasterizeVectorSprite(a, mem, vecBufA, ba)) return true;
+    if (bVec && !rasterizeVectorSprite(b, mem, vecBufB, bb)) return true;
+
     for (int32_t py = iy0; py < iy1; py++) {
         for (int32_t px = ix0; px < ix1; px++) {
-            if (spriteHasPixelAt(a, mem, (int)px, (int)py) &&
-                spriteHasPixelAt(b, mem, (int)px, (int)py)) {
-                return true;
+            bool aHit;
+            if (aVec) {
+                aHit = bufHasPixelAt(vecBufA, ba.w, ba.h,
+                                     (int)(px - ba.x), (int)(py - ba.y));
+            } else {
+                aHit = spriteHasPixelAt(a, mem, (int)px, (int)py);
             }
+            if (!aHit) continue;
+
+            bool bHit;
+            if (bVec) {
+                bHit = bufHasPixelAt(vecBufB, bb.w, bb.h,
+                                     (int)(px - bb.x), (int)(py - bb.y));
+            } else {
+                bHit = spriteHasPixelAt(b, mem, (int)px, (int)py);
+            }
+            if (bHit) return true;
         }
     }
     return false;
-}
-
-// --- Vector sprite helpers ---
-
-static int16_t decode44(uint8_t byte) {
-    int8_t s = (byte >= 128) ? (int8_t)(byte - 256) : (int8_t)byte;
-    return (int16_t)(s * 16);
 }
 
 static void drawVectorSprite(Framebuffer& fb, const Sprite& spr, const uint8_t* mem) {
@@ -383,8 +500,10 @@ void updateSprites(SpriteTable& table, WallTable& walls, int32_t scale_fp, uint8
 
             bool aRot = ((a.angle_fp >> FP_SHIFT) & 0xFF) != 0;
             bool bRot = ((b.angle_fp >> FP_SHIFT) & 0xFF) != 0;
+            bool aVec = (a.flags & 4) != 0;
+            bool bVec = (b.flags & 4) != 0;
 
-            if (aRot || bRot) {
+            if (aRot || bRot || aVec || bVec) {
                 BBox ba = sprBBox(a);
                 BBox bb = sprBBox(b);
                 if (!aabbOverlap(ba.x, ba.y, ba.w, ba.h, bb.x, bb.y, bb.w, bb.h)) continue;

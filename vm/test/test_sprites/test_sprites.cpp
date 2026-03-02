@@ -183,6 +183,116 @@ void test_rotation(void) {
     TEST_ASSERT_EQUAL_INT(1, angle); // should have rotated
 }
 
+// --- Vector sprite collision tests ---
+
+// Encode a 4.4 fixed-point value: integer * 16
+static uint8_t enc44(int val) {
+    int16_t fp = (int16_t)(val * 16);
+    return (uint8_t)(fp & 0xFF);
+}
+
+// Helper: set up a vector sprite with a single horizontal line segment
+// The line goes from (-halfW, 0) to (+halfW, 0) in local coords
+static void setupVectorSprite(int slot, int x, int y, int w, int h,
+                              int halfW, uint16_t addr, int angle) {
+    Sprite& s = sprites.sprites[slot];
+    s.active = true;
+    s.visible = true;
+    s.x_fp = pixelToFp(x);
+    s.y_fp = pixelToFp(y);
+    s.width = w;
+    s.height = h;
+    s.vx = 0;
+    s.vy = 0;
+    s.edge = 0;
+    s.flags = 4; // vector sprite
+    s.addr = addr;
+    s.angle_fp = (int32_t)angle << FP_SHIFT;
+    s.spriteMode = 1; // detect
+    s.collGroup = 0xFF;
+    s.collMask = 0xFF;
+
+    // Write vector data: 1 segment, horizontal line from (-halfW,0) to (+halfW,0)
+    mem[addr] = 1; // segment count
+    mem[addr + 1] = enc44(-halfW); // x1
+    mem[addr + 2] = enc44(0);      // y1
+    mem[addr + 3] = enc44(halfW);  // x2
+    mem[addr + 4] = enc44(0);      // y2
+}
+
+void test_vector_sprites_overlapping_collide(void) {
+    // Two vector sprites at the same position should collide
+    setupVectorSprite(0, 30, 30, 16, 16, 4, 0x200, 0);
+    setupVectorSprite(1, 30, 30, 16, 16, 4, 0x300, 0);
+
+    updateSprites(sprites, walls, FP_SCALE, mem);
+    TEST_ASSERT_TRUE(sprites.sprites[0].hitFlags & 4);
+    TEST_ASSERT_TRUE(sprites.sprites[1].hitFlags & 4);
+}
+
+void test_vector_sprites_apart_no_collide(void) {
+    // Two vector sprites far apart should not collide
+    setupVectorSprite(0, 10, 10, 16, 16, 4, 0x200, 0);
+    setupVectorSprite(1, 80, 10, 16, 16, 4, 0x300, 0);
+
+    updateSprites(sprites, walls, FP_SCALE, mem);
+    TEST_ASSERT_EQUAL_UINT8(0, sprites.sprites[0].hitFlags & 4);
+    TEST_ASSERT_EQUAL_UINT8(0, sprites.sprites[1].hitFlags & 4);
+}
+
+void test_vector_sprites_aabb_overlap_but_pixels_miss(void) {
+    // Two vector sprites whose AABBs overlap but actual lines don't touch.
+    // Sprite 0: horizontal line at y=30, sprite 1: horizontal line at y=40
+    // AABBs overlap (both 16x16 sprites close together) but lines are offset.
+    setupVectorSprite(0, 20, 22, 16, 16, 4, 0x200, 0);
+    setupVectorSprite(1, 20, 36, 16, 16, 4, 0x300, 0);
+    // AABBs: sprite 0 covers y=22..38, sprite 1 covers y=36..52
+    // Lines: sprite 0 line at y=30 (center), sprite 1 line at y=44 (center)
+    // AABBs overlap in y=36..38, but no line pixels there
+
+    updateSprites(sprites, walls, FP_SCALE, mem);
+    TEST_ASSERT_EQUAL_UINT8(0, sprites.sprites[0].hitFlags & 4);
+    TEST_ASSERT_EQUAL_UINT8(0, sprites.sprites[1].hitFlags & 4);
+}
+
+void test_vector_sprites_rotated_collide(void) {
+    // Two vector sprites at same position, one rotated 90 degrees (angle=64)
+    // Sprite 0: horizontal line, sprite 1: vertical line (rotated 90 deg)
+    // They should cross at the center and collide
+    setupVectorSprite(0, 30, 30, 16, 16, 4, 0x200, 0);
+    setupVectorSprite(1, 30, 30, 16, 16, 4, 0x300, 64);
+
+    updateSprites(sprites, walls, FP_SCALE, mem);
+    TEST_ASSERT_TRUE(sprites.sprites[0].hitFlags & 4);
+    TEST_ASSERT_TRUE(sprites.sprites[1].hitFlags & 4);
+}
+
+void test_vector_vs_bitmap_collision(void) {
+    // Vector sprite overlapping a bitmap sprite should collide.
+    // Use 8x8 vector so its center line at y=14 overlaps the bitmap at y=10..17.
+    setupVectorSprite(0, 10, 10, 8, 8, 3, 0x200, 0);
+
+    // Set up bitmap sprite at overlapping position
+    Sprite& b = sprites.sprites[1];
+    b.active = true;
+    b.visible = true;
+    b.x_fp = pixelToFp(10);
+    b.y_fp = pixelToFp(10);
+    b.width = 8;
+    b.height = 8;
+    b.flags = 0; // bitmap
+    b.addr = 0x400;
+    b.spriteMode = 1;
+    b.collGroup = 0xFF;
+    b.collMask = 0xFF;
+    // Fill bitmap with all-set pixels
+    for (int i = 0; i < 8; i++) mem[0x400 + i] = 0xFF;
+
+    updateSprites(sprites, walls, FP_SCALE, mem);
+    TEST_ASSERT_TRUE(sprites.sprites[0].hitFlags & 4);
+    TEST_ASSERT_TRUE(sprites.sprites[1].hitFlags & 4);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_velocity_integration);
@@ -199,5 +309,10 @@ int main(void) {
     RUN_TEST(test_draw_sprites);
     RUN_TEST(test_invisible_sprite_not_drawn);
     RUN_TEST(test_rotation);
+    RUN_TEST(test_vector_sprites_overlapping_collide);
+    RUN_TEST(test_vector_sprites_apart_no_collide);
+    RUN_TEST(test_vector_sprites_aabb_overlap_but_pixels_miss);
+    RUN_TEST(test_vector_sprites_rotated_collide);
+    RUN_TEST(test_vector_vs_bitmap_collision);
     return UNITY_END();
 }
