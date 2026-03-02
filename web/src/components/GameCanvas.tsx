@@ -10,10 +10,10 @@ export const GameCanvas = forwardRef<HTMLCanvasElement, GameCanvasProps>(
     return (
       <canvas
         ref={ref}
-        width={SCREEN_W}
-        height={SCREEN_H}
+        width={SCREEN_W * scale}
+        height={SCREEN_H * scale}
         className="border-2 border-[var(--border)] bg-black"
-        style={{ width: SCREEN_W * scale, height: SCREEN_H * scale }}
+        style={{ imageRendering: "pixelated" }}
       />
     );
   },
