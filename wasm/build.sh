@@ -15,6 +15,7 @@ SOURCES=(
     "$VM_LIB/display.cpp"
     "$VM_LIB/font.cpp"
     "$VM_LIB/sprites.cpp"
+    "$VM_LIB/particles.cpp"
     "$VM_LIB/syscalls.cpp"
     "$VM_LIB/runtime.cpp"
     "$WASM_DIR/wasm_api.cpp"
@@ -71,6 +72,10 @@ EXPORTED_FUNCTIONS=(
     _vm_spr_set_coll_group
     _vm_spr_set_coll_mask
     _vm_spr_set_sprite_mode
+    _vm_audio_cmd_count
+    _vm_audio_cmd_id
+    _vm_audio_cmd_arg
+    _vm_audio_cmd_clear
     _malloc
     _free
 )

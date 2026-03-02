@@ -37,4 +37,17 @@ export const Sys = {
   SPR_ROT: 0x4d,
   SPR_GETROT: 0x4e,
   SPR_VIS: 0x4f,
+  PFX_SET: 0x50,
+  PFX_POS: 0x51,
+  PFX_BURST: 0x52,
+  PFX_ON: 0x53,
+  PFX_CLEAR: 0x54,
+
+  VOICE: 0x30,
+  ENVELOPE: 0x31,
+  NOTE_OFF: 0x32,
+  FILTER: 0x33,
+  VOLUME: 0x34,
+  TONE: 0x35,
+  SFX: 0x36,
 } as const;

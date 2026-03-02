@@ -3,16 +3,20 @@
 #include "display.h"
 #include "font.h"
 #include "sprites.h"
+#include "particles.h"
 #include "sin_table.h"
 #include "memory.h"
 #include <cstdio>
 #include <cstring>
 
-SyscallContext createSyscallContext(Framebuffer* fb, SpriteTable* sprites, WallTable* walls) {
+SyscallContext createSyscallContext(Framebuffer* fb, SpriteTable* sprites, WallTable* walls,
+                                   ParticleTable* particles) {
     SyscallContext ctx;
     ctx.fb = fb;
     ctx.sprites = sprites;
     ctx.walls = walls;
+    ctx.particles = particles;
+    ctx.audio.count = 0;
     ctx.inputBits = 0;
     ctx.yieldRequested = false;
     ctx.elapsed_ms = 0;
@@ -364,11 +368,169 @@ void handleSyscall(uint8_t id, VMState& vm, void* ctxPtr) {
             break;
         }
 
-        default:
-            // Audio range: 0x30-0x3F — silent NOPs
-            if (id >= 0x30 && id <= 0x3F) {
-                break;
+        // --- Particle syscalls ---
+
+        case SYS_PFX_SET: {
+            uint16_t flags  = pop(vm);
+            int16_t  grav   = toSigned(pop(vm));
+            uint16_t dir    = pop(vm);
+            uint16_t spread = pop(vm);
+            uint16_t life   = pop(vm);
+            uint16_t speed  = pop(vm);
+            uint16_t slot   = pop(vm);
+            if (ctx.particles && slot < MAX_EMITTERS) {
+                Emitter& e = ctx.particles->emitters[slot];
+                e.speed     = (uint8_t)speed;
+                e.life      = (uint8_t)life;
+                e.spread    = (uint8_t)spread;
+                e.direction = (uint8_t)dir;
+                e.gravity   = (int8_t)grav;
+                e.flags     = (uint8_t)flags;
             }
+            break;
+        }
+
+        case SYS_PFX_POS: {
+            uint16_t y    = pop(vm);
+            uint16_t x    = pop(vm);
+            uint16_t slot = pop(vm);
+            if (ctx.particles && slot < MAX_EMITTERS) {
+                ctx.particles->emitters[slot].x_fp = (int16_t)((int16_t)x << 8);
+                ctx.particles->emitters[slot].y_fp = (int16_t)((int16_t)y << 8);
+            }
+            break;
+        }
+
+        case SYS_PFX_BURST: {
+            uint16_t count = pop(vm);
+            uint16_t slot  = pop(vm);
+            if (ctx.particles) {
+                burstParticles(*ctx.particles, (int)slot, (int)count, ctx.rngState);
+            }
+            break;
+        }
+
+        case SYS_PFX_ON: {
+            uint16_t rate = pop(vm);
+            uint16_t slot = pop(vm);
+            if (ctx.particles && slot < MAX_EMITTERS) {
+                Emitter& e = ctx.particles->emitters[slot];
+                e.rate = (uint8_t)rate;
+                if (rate > 0) {
+                    e.flags |= EMITTER_ACTIVE;
+                } else {
+                    e.flags &= ~EMITTER_ACTIVE;
+                }
+            }
+            break;
+        }
+
+        case SYS_PFX_CLEAR: {
+            uint16_t slot = pop(vm);
+            if (ctx.particles) {
+                clearParticles(*ctx.particles, (int)slot);
+            }
+            break;
+        }
+
+        // --- Audio syscalls ---
+
+        case SYS_VOICE: {
+            // [voice, waveform, freq_hz, pulse_width]
+            uint16_t pw   = pop(vm);
+            uint16_t freq = pop(vm);
+            uint16_t wave = pop(vm);
+            uint16_t voice = pop(vm);
+            if (ctx.audio.count < AUDIO_CMD_MAX) {
+                AudioCmd& cmd = ctx.audio.cmds[ctx.audio.count++];
+                cmd.id = SYS_VOICE;
+                cmd.argCount = 4;
+                cmd.args[0] = voice; cmd.args[1] = wave;
+                cmd.args[2] = freq;  cmd.args[3] = pw;
+            }
+            break;
+        }
+
+        case SYS_ENVELOPE: {
+            // [voice, attack, decay, sustain, release]
+            uint16_t r = pop(vm);
+            uint16_t s = pop(vm);
+            uint16_t d = pop(vm);
+            uint16_t a = pop(vm);
+            uint16_t voice = pop(vm);
+            if (ctx.audio.count < AUDIO_CMD_MAX) {
+                AudioCmd& cmd = ctx.audio.cmds[ctx.audio.count++];
+                cmd.id = SYS_ENVELOPE;
+                cmd.argCount = 5;
+                cmd.args[0] = voice; cmd.args[1] = a;
+                cmd.args[2] = d;     cmd.args[3] = s;
+                cmd.args[4] = r;
+            }
+            break;
+        }
+
+        case SYS_NOTE_OFF: {
+            uint16_t voice = pop(vm);
+            if (ctx.audio.count < AUDIO_CMD_MAX) {
+                AudioCmd& cmd = ctx.audio.cmds[ctx.audio.count++];
+                cmd.id = SYS_NOTE_OFF;
+                cmd.argCount = 1;
+                cmd.args[0] = voice;
+            }
+            break;
+        }
+
+        case SYS_FILTER: {
+            // [cutoff, resonance, mode, routing]
+            uint16_t routing = pop(vm);
+            uint16_t mode    = pop(vm);
+            uint16_t reso    = pop(vm);
+            uint16_t cutoff  = pop(vm);
+            if (ctx.audio.count < AUDIO_CMD_MAX) {
+                AudioCmd& cmd = ctx.audio.cmds[ctx.audio.count++];
+                cmd.id = SYS_FILTER;
+                cmd.argCount = 4;
+                cmd.args[0] = cutoff;  cmd.args[1] = reso;
+                cmd.args[2] = mode;    cmd.args[3] = routing;
+            }
+            break;
+        }
+
+        case SYS_VOLUME: {
+            uint16_t vol = pop(vm);
+            if (ctx.audio.count < AUDIO_CMD_MAX) {
+                AudioCmd& cmd = ctx.audio.cmds[ctx.audio.count++];
+                cmd.id = SYS_VOLUME;
+                cmd.argCount = 1;
+                cmd.args[0] = vol;
+            }
+            break;
+        }
+
+        case SYS_TONE: {
+            uint16_t dur  = pop(vm);
+            uint16_t freq = pop(vm);
+            if (ctx.audio.count < AUDIO_CMD_MAX) {
+                AudioCmd& cmd = ctx.audio.cmds[ctx.audio.count++];
+                cmd.id = SYS_TONE;
+                cmd.argCount = 2;
+                cmd.args[0] = freq; cmd.args[1] = dur;
+            }
+            break;
+        }
+
+        case SYS_SFX: {
+            uint16_t effectId = pop(vm);
+            if (ctx.audio.count < AUDIO_CMD_MAX) {
+                AudioCmd& cmd = ctx.audio.cmds[ctx.audio.count++];
+                cmd.id = SYS_SFX;
+                cmd.argCount = 1;
+                cmd.args[0] = effectId;
+            }
+            break;
+        }
+
+        default:
             // Unknown syscall — ignore
             break;
     }

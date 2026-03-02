@@ -22,6 +22,11 @@ export interface WasmVM {
   writeMem(addr: number, val: number): void;
   readMem16(addr: number): number;
   getPixelFront(x: number, y: number): number;
+  // Audio command buffer
+  audioCommandCount(): number;
+  audioCommandId(i: number): number;
+  audioCommandArg(i: number, j: number): number;
+  audioCommandClear(): void;
   // Sprite introspection
   sprActive(slot: number): boolean;
   sprX(slot: number): number;
@@ -88,6 +93,12 @@ export async function loadWasmVM(): Promise<WasmVM> {
   const vmWriteMem = mod.cwrap("vm_write_mem", null, ["number", "number"]) as (addr: number, val: number) => void;
   const vmReadMem16 = mod.cwrap("vm_read_mem16", "number", ["number"]) as (addr: number) => number;
   const vmGetPixelFront = mod.cwrap("vm_get_pixel_front", "number", ["number", "number"]) as (x: number, y: number) => number;
+
+  // Audio command buffer
+  const vmAudioCmdCount = mod.cwrap("vm_audio_cmd_count", "number", []) as () => number;
+  const vmAudioCmdId = mod.cwrap("vm_audio_cmd_id", "number", ["number"]) as (i: number) => number;
+  const vmAudioCmdArg = mod.cwrap("vm_audio_cmd_arg", "number", ["number", "number"]) as (i: number, j: number) => number;
+  const vmAudioCmdClear = mod.cwrap("vm_audio_cmd_clear", null, []) as () => void;
 
   // Sprite introspection
   const vmSprActive = mod.cwrap("vm_spr_active", "boolean", ["number"]) as (s: number) => boolean;
@@ -157,6 +168,10 @@ export async function loadWasmVM(): Promise<WasmVM> {
     writeMem: vmWriteMem,
     readMem16: vmReadMem16,
     getPixelFront: vmGetPixelFront,
+    audioCommandCount: vmAudioCmdCount,
+    audioCommandId: vmAudioCmdId,
+    audioCommandArg: vmAudioCmdArg,
+    audioCommandClear: vmAudioCmdClear,
     sprActive: vmSprActive,
     sprX: vmSprX,
     sprY: vmSprY,

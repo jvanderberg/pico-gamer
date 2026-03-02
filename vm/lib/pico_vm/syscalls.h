@@ -5,6 +5,7 @@ struct VMState;
 struct Framebuffer;
 struct SpriteTable;
 struct WallTable;
+struct ParticleTable;
 
 enum Sys : uint8_t {
     SYS_CLEAR      = 0x00,
@@ -47,19 +48,51 @@ enum Sys : uint8_t {
     SYS_SPR_ROT    = 0x4D,
     SYS_SPR_GETROT = 0x4E,
     SYS_SPR_VIS    = 0x4F,
+
+    SYS_VOICE      = 0x30,
+    SYS_ENVELOPE   = 0x31,
+    SYS_NOTE_OFF   = 0x32,
+    SYS_FILTER     = 0x33,
+    SYS_VOLUME     = 0x34,
+    SYS_TONE       = 0x35,
+    SYS_SFX        = 0x36,
+
+    SYS_PFX_SET    = 0x50,
+    SYS_PFX_POS    = 0x51,
+    SYS_PFX_BURST  = 0x52,
+    SYS_PFX_ON     = 0x53,
+    SYS_PFX_CLEAR  = 0x54,
+};
+
+// Audio command ring buffer
+static constexpr int AUDIO_CMD_MAX = 32;
+static constexpr int AUDIO_CMD_MAX_ARGS = 5;
+
+struct AudioCmd {
+    uint8_t  id;
+    uint16_t args[AUDIO_CMD_MAX_ARGS];
+    uint8_t  argCount;
+};
+
+struct AudioCmdBuffer {
+    AudioCmd cmds[AUDIO_CMD_MAX];
+    int count;
 };
 
 struct SyscallContext {
-    Framebuffer*  fb;
-    SpriteTable*  sprites;
-    WallTable*    walls;
-    uint16_t      inputBits;
-    bool          yieldRequested;
-    uint16_t      elapsed_ms;     // controllable by test harness
-    uint16_t      rngState;       // xorshift16 state
+    Framebuffer*   fb;
+    SpriteTable*   sprites;
+    WallTable*     walls;
+    ParticleTable* particles;
+    AudioCmdBuffer audio;
+    uint16_t       inputBits;
+    bool           yieldRequested;
+    uint16_t       elapsed_ms;     // controllable by test harness
+    uint16_t       rngState;       // xorshift16 state
 };
 
-SyscallContext createSyscallContext(Framebuffer* fb, SpriteTable* sprites, WallTable* walls);
+SyscallContext createSyscallContext(Framebuffer* fb, SpriteTable* sprites, WallTable* walls,
+                                   ParticleTable* particles = nullptr);
 
 // The syscall handler function (matches SyscallHandler signature via wrapper)
 void handleSyscall(uint8_t id, VMState& vm, void* ctx);

@@ -4,14 +4,16 @@
 #include "memory.h"
 #include "display.h"
 #include "sprites.h"
+#include "particles.h"
 #include "syscalls.h"
 #include "runtime.h"
 
 // File-scope globals — single VM instance
-static VMState       vm;
-static Framebuffer   fb;
-static SpriteTable   sprites;
-static WallTable     walls;
+static VMState        vm;
+static Framebuffer    fb;
+static SpriteTable    sprites;
+static WallTable      walls;
+static ParticleTable  particles;
 static SyscallContext ctx;
 
 extern "C" {
@@ -22,7 +24,8 @@ void vm_init() {
     fb = createFramebuffer();
     sprites = createSpriteTable();
     walls = createWallTable();
-    ctx = createSyscallContext(&fb, &sprites, &walls);
+    particles = createParticleTable();
+    ctx = createSyscallContext(&fb, &sprites, &walls, &particles);
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -31,7 +34,8 @@ void vm_reset() {
     fb = createFramebuffer();
     resetSpriteTable(sprites);
     resetWallTable(walls);
-    ctx = createSyscallContext(&fb, &sprites, &walls);
+    resetParticleTable(particles);
+    ctx = createSyscallContext(&fb, &sprites, &walls, &particles);
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -130,6 +134,30 @@ uint16_t vm_read_mem16(uint16_t addr) {
 EMSCRIPTEN_KEEPALIVE
 int vm_get_pixel_front(int x, int y) {
     return getPixelFront(fb, x, y);
+}
+
+// --- Audio command buffer ---
+
+EMSCRIPTEN_KEEPALIVE
+int vm_audio_cmd_count() {
+    return ctx.audio.count;
+}
+
+EMSCRIPTEN_KEEPALIVE
+uint8_t vm_audio_cmd_id(int i) {
+    return (i >= 0 && i < ctx.audio.count) ? ctx.audio.cmds[i].id : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE
+uint16_t vm_audio_cmd_arg(int i, int j) {
+    if (i >= 0 && i < ctx.audio.count && j >= 0 && j < ctx.audio.cmds[i].argCount)
+        return ctx.audio.cmds[i].args[j];
+    return 0;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void vm_audio_cmd_clear() {
+    ctx.audio.count = 0;
 }
 
 // --- Sprite introspection (getters) ---

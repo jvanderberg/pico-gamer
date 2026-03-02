@@ -5,7 +5,7 @@
 
 ' -- Graphics DATA ---------------------------------------------------
 ' Ship vector data (triangle outline, 3 segments in 4.4 signed fixed-point)
-DATA ship_vecs, 3, $00,$D0,$E0,$20, $E0,$20,$20,$20, $20,$20,$00,$D0
+DATA ship_vecs, 3, $00,$C0,$D0,$30, $D0,$30,$30,$30, $30,$30,$00,$C0
 
 ' Bullet bitmap (2x2 filled square)
 DATA bullet_bmp, $C0, $C0
@@ -29,6 +29,7 @@ DIM sizes(27)
 ' ====================================================================
 
 SUB init_game()
+  VOLUME 200
   ship_vx = 0
   ship_vy = 0
   cooldown = 0
@@ -39,10 +40,20 @@ SUB init_game()
   lives = 3
   score = 0
   wave = 0
+  was_thrust = 0
 
-  SPRITE 0, ship_vecs, 7, 7, 62, 30, SPR_VECTOR, 0, 0, EDGE_WRAP
+  ' Thrust sound: voice 0 = low rumble, voice 1 = high hiss
+  ENVELOPE 0, 8, 0, 100, 20
+  ENVELOPE 1, 5, 0, 50, 15
+
+  SPRITE 0, ship_vecs, 9, 9, 60, 28, SPR_VECTOR, 0, 0, EDGE_WRAP
   SPR_GROUP 0, 1, 2
   SPR_COLL 0, COLL_DETECT
+
+  ' Emitter 0: thrust exhaust (focused cone, short life)
+  PFX_SET 0, 25, 8, 5, 0, 0, PFX_LIFE_VAR
+  ' Emitter 1: asteroid/ship explosion (1x1, omnidirectional)
+  PFX_SET 1, 50, 12, 128, 0, 0, PFX_SPEED_VAR OR PFX_LIFE_VAR
 
   FOR i = 0 TO 26
     sizes(i) = 0
@@ -55,12 +66,22 @@ SUB check_collisions()
   IF invincible = 0 THEN
     hit_result = SPR_HIT(0)
     IF hit_result AND 4 THEN
+      ' Explosion at ship position
+      hx, hy = SPR_GET(0)
+      PFX_POS 1, hx + 4, hy + 4
+      PFX_BURST 1, 20
+      SFX SFX_DEATH
+      ' Kill thrust sound
+      NOTEOFF 0
+      NOTEOFF 1
+      was_thrust = 0
+
       lives = lives - 1
       IF lives = 0 THEN
         game_state = 1
       ELSE
         ' Respawn ship
-        SPR_POS 0, 62, 30
+        SPR_POS 0, 60, 28
         SPR_VEL 0, 0, 0
         ship_vx = 0
         ship_vy = 0
@@ -83,18 +104,25 @@ SUB check_collisions()
             ax, ay = SPR_GET(slot)
             old_size = sizes(slot - 5)
 
+            ' Explosion at asteroid position
+            PFX_POS 1, ax, ay
+            PFX_BURST 1, 12
+
             ' Clear size and destroy sprite
             sizes(slot - 5) = 0
             SPR_OFF slot
             ast_count = ast_count - 1
 
-            ' Add score
+            ' Add score + sound by size
             IF old_size = 1 THEN
               score = score + 100
+              SFX SFX_EXPLODE
             ELSEIF old_size = 2 THEN
               score = score + 50
+              SFX SFX_HIT
             ELSE
               score = score + 25
+              SFX SFX_BLIP
             END IF
 
             ' Split if not small (size < 3)
@@ -147,6 +175,7 @@ END SUB
 
 SUB spawn_wave()
   wave = wave + 1
+  IF wave > 1 THEN SFX SFX_POWERUP
   wcount = wave + 3
   IF wcount > 27 THEN wcount = 27
 
@@ -222,14 +251,42 @@ DO
       sin_val = SIN(thrust_angle)
       IF sin_val >= 128 THEN sin_val = sin_val - 256
       ship_vy = ship_vy + FX_MUL(sin_val, 2, 5)
+
+      ' Exhaust particles behind ship
+      exhaust_dir = (thrust_angle + 128) AND 255
+      PFX_SET 0, 25, 8, 5, exhaust_dir, 0, PFX_LIFE_VAR
+      tx, ty = SPR_GET(0)
+      ' Offset emitter 5px behind ship center using exhaust direction
+      ex_cos = COS(exhaust_dir)
+      IF ex_cos >= 128 THEN ex_cos = ex_cos - 256
+      ex_sin = SIN(exhaust_dir)
+      IF ex_sin >= 128 THEN ex_sin = ex_sin - 256
+      PFX_POS 0, tx + 4 + FX_MUL(ex_cos, 5, 7), ty + 4 + FX_MUL(ex_sin, 5, 7)
+      PFX_ON 0, 2
+
+      ' Start thrust sound on transition
+      IF was_thrust = 0 THEN
+        was_thrust = 1
+        VOICE 0, WAVE_NOISE, 150, 0
+        VOICE 1, WAVE_NOISE, 5000, 0
+      END IF
+    ELSE
+      PFX_ON 0, 0
+
+      ' Release thrust sound on transition
+      IF was_thrust = 1 THEN
+        was_thrust = 0
+        NOTEOFF 0
+        NOTEOFF 1
+      END IF
     END IF
 
     ' -- Handle fire (ENC_BTN) -----------------------------------------
     IF inp AND INPUT_ENC_BTN THEN
       IF cooldown = 0 THEN
         sx, sy = SPR_GET(0)
-        sx = sx + 2
-        sy = sy + 2
+        sx = sx + 3
+        sy = sy + 3
 
         thrust_angle = (SPR_GETROT(0) + 192) AND 255
 
@@ -255,6 +312,7 @@ DO
         SPRITE bslot, bullet_bmp, 2, 2, sx, sy, 0, bvx, bvy, EDGE_DESTROY
         SPR_GROUP bslot, 4, 2
         SPR_COLL bslot, COLL_DESTROY
+        SFX SFX_LASER
 
         cooldown = 16
       END IF
@@ -275,9 +333,12 @@ DO
   LOOP
 
   ' -- Game over screen ------------------------------------------------
+  NOTEOFF 0
+  NOTEOFF 1
   FOR gs = 0 TO 31
     SPR_OFF gs
   NEXT
+  PFX_CLEAR PFX_ALL
 
   DO
     TEXT_LG "GAME OVER", 37, 20

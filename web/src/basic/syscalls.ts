@@ -36,6 +36,18 @@ export const SYSCALL_STMTS: Record<string, SyscallDef> = {
   TEXT_NUM:   { id: Sys.TEXT_NUM,   argCount: 3,  returns: false },
   WALL_SET:   { id: Sys.WALL_SET,  argCount: 5,  returns: false },
   WALL_OFF:   { id: Sys.WALL_OFF,  argCount: 1,  returns: false },
+  PFX_SET:    { id: Sys.PFX_SET,   argCount: 7,  returns: false },
+  PFX_POS:    { id: Sys.PFX_POS,   argCount: 3,  returns: false },
+  PFX_BURST:  { id: Sys.PFX_BURST, argCount: 2,  returns: false },
+  PFX_ON:     { id: Sys.PFX_ON,    argCount: 2,  returns: false },
+  PFX_CLEAR:  { id: Sys.PFX_CLEAR, argCount: 1,  returns: false },
+  VOICE:      { id: Sys.VOICE,    argCount: 4,  returns: false },
+  ENVELOPE:   { id: Sys.ENVELOPE, argCount: 5,  returns: false },
+  NOTEOFF:    { id: Sys.NOTE_OFF, argCount: 1,  returns: false },
+  FILTER:     { id: Sys.FILTER,   argCount: 4,  returns: false },
+  VOLUME:     { id: Sys.VOLUME,   argCount: 1,  returns: false },
+  TONE:       { id: Sys.TONE,     argCount: 2,  returns: false },
+  SFX:        { id: Sys.SFX,      argCount: 1,  returns: false },
   HALT:       { id: -1,            argCount: 0,  returns: false }, // special: emits HALT opcode
 };
 

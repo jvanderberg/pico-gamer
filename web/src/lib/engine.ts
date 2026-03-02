@@ -1,4 +1,5 @@
 import { loadWasmVM, type WasmVM } from "../wasm/wasm-vm.ts";
+import { createAudioManager, type AudioManager } from "../audio/audio-manager.ts";
 import {
   createInput,
   bindInput,
@@ -167,6 +168,7 @@ export async function createEngine(
 ): Promise<Engine> {
   const vm: WasmVM = await loadWasmVM();
   const input: InputState = createInput();
+  const audio: AudioManager = createAudioManager();
 
   let lastBytecode: Uint8Array | null = null;
   let currentError: string | null = null;
@@ -206,11 +208,28 @@ export async function createEngine(
     renderToCanvas(vm.getFramebuffer(), canvasCtx, scale);
   }
 
+  /** Drain pending audio commands from the VM and dispatch to the AudioWorklet. */
+  function drainAudioCommands(): void {
+    const count = vm.audioCommandCount();
+    for (let i = 0; i < count; i++) {
+      const id = vm.audioCommandId(i);
+      const args: number[] = [];
+      // Max 5 args per command
+      for (let j = 0; j < 5; j++) {
+        args.push(vm.audioCommandArg(i, j));
+      }
+      audio.dispatchAudioCmd(id, args);
+    }
+    if (count > 0) vm.audioCommandClear();
+  }
+
   /** Execute one game frame. Returns false on HALT. */
   function execGameFrame(): boolean {
     vm.setInput(consumeInputWord(input));
     vm.setElapsedMs(((performance.now() - startTime) & 0xffff) >>> 0);
-    return vm.execFrame();
+    const result = vm.execFrame();
+    drainAudioCommands();
+    return result;
   }
 
   /** rAF callback — accumulator-based fixed timestep locked to 60fps. */
@@ -348,6 +367,7 @@ export async function createEngine(
       startTime = performance.now();
       lastFrameTime = performance.now() / 1000;
       accumulator = FRAME_DT; // trigger first frame immediately
+      audio.resume();
       emitUpdate();
       animFrame = requestAnimationFrame(runFrame);
     },
@@ -359,6 +379,7 @@ export async function createEngine(
         cancelAnimationFrame(animFrame);
         animFrame = null;
       }
+      audio.suspend();
       emitUpdate();
     },
 
@@ -457,6 +478,7 @@ export async function createEngine(
         animFrame = null;
       }
       cleanupInput();
+      audio.cleanup();
     },
   };
 }

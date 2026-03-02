@@ -41,6 +41,43 @@ const BUILTIN_CONSTS: Record<string, number> = {
   SPR_FLIPX: 1,
   SPR_FLIPY: 2,
   SPR_VECTOR: 4,
+
+  // Particle flags
+  PFX_ALL: 255,
+  PFX_2X2: 4,
+  PFX_BLACK: 8,
+  PFX_SPEED_VAR: 16,
+  PFX_LIFE_VAR: 32,
+
+  // Waveform IDs
+  WAVE_OFF: 0,
+  WAVE_PULSE: 1,
+  WAVE_SAW: 2,
+  WAVE_TRI: 3,
+  WAVE_NOISE: 4,
+
+  // Filter modes
+  FILTER_LP: 0,
+  FILTER_BP: 1,
+  FILTER_HP: 2,
+
+  // SFX preset IDs
+  SFX_LASER: 0,
+  SFX_EXPLODE: 1,
+  SFX_PICKUP: 2,
+  SFX_JUMP: 3,
+  SFX_HIT: 4,
+  SFX_BOUNCE: 5,
+  SFX_POWERUP: 6,
+  SFX_DEATH: 7,
+  SFX_COIN: 8,
+  SFX_BEEP: 9,
+  SFX_THUD: 10,
+  SFX_ZAP: 11,
+  SFX_ALARM: 12,
+  SFX_CLICK: 13,
+  SFX_WHOOSH: 14,
+  SFX_BLIP: 15,
 };
 
 interface CodeGenState {
