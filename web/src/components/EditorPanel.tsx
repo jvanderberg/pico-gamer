@@ -1,5 +1,6 @@
-import { useRef, type CSSProperties } from "react";
+import { useRef, useState, type CSSProperties } from "react";
 import { CodeEditor } from "./CodeEditor.tsx";
+import { SpriteEditor } from "./SpriteEditor.tsx";
 import type { Demo } from "../lib/engine.ts";
 
 interface EditorPanelProps {
@@ -24,6 +25,7 @@ export function EditorPanel({
   style,
 }: EditorPanelProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [spriteEditorOpen, setSpriteEditorOpen] = useState(false);
 
   function handleFileClick() {
     fileInputRef.current?.click();
@@ -53,6 +55,12 @@ export function EditorPanel({
         </select>
         <button
           className="btn ml-auto text-[11px] px-2 py-0.5"
+          onClick={() => setSpriteEditorOpen(true)}
+        >
+          Sprite Ed
+        </button>
+        <button
+          className="btn text-[11px] px-2 py-0.5"
           onClick={handleFileClick}
         >
           Load File
@@ -69,6 +77,10 @@ export function EditorPanel({
         value={source}
         onChange={onSourceChange}
         language={language}
+      />
+      <SpriteEditor
+        open={spriteEditorOpen}
+        onClose={() => setSpriteEditorOpen(false)}
       />
     </div>
   );
