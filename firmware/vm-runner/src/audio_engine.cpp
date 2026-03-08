@@ -135,8 +135,8 @@ struct SongTrackState {
   uint16_t vibratoRate64 = 0;
   int16_t vibratoDepthCents = 0;
   uint16_t eventsAddr = 0;
-  uint8_t eventCount = 0;
-  uint8_t eventIndex = 0;
+  uint16_t eventCount = 0;
+  uint16_t eventIndex = 0;
   uint32_t samplesLeft = 0;
 };
 
@@ -594,7 +594,7 @@ void stopSong() {
 
 void triggerSongEvent(SongTrackState& track) {
   if (!gSong.memory || track.eventCount == 0) return;
-  const uint16_t eventBase = static_cast<uint16_t>(track.eventsAddr + 1u + static_cast<uint16_t>(track.eventIndex) * 2u);
+  const uint16_t eventBase = static_cast<uint16_t>(track.eventsAddr + 2u + static_cast<uint16_t>(track.eventIndex) * 2u);
   const uint8_t pitch = readU8(gSong.memory, eventBase);
   const uint8_t duration = readU8(gSong.memory, static_cast<uint16_t>(eventBase + 1u));
   track.samplesLeft = gSong.stepSamples * static_cast<uint32_t>(duration == 0 ? 1 : duration);
@@ -642,7 +642,7 @@ void startSong(const uint8_t* memory, uint16_t addr) {
     track.vibratoRate64 = readU16(memory, static_cast<uint16_t>(trackBase + 3u));
     track.vibratoDepthCents = static_cast<int16_t>(readU16(memory, static_cast<uint16_t>(trackBase + 5u)));
     track.eventsAddr = readU16(memory, static_cast<uint16_t>(trackBase + 7u));
-    track.eventCount = readU8(memory, track.eventsAddr);
+    track.eventCount = readU16(memory, track.eventsAddr);
     track.eventIndex = 0;
     track.samplesLeft = 0;
     if (track.voice >= kMaxVoices || track.eventCount == 0) {

@@ -3,8 +3,10 @@ dist/
 web/src/wasm/pico-vm.mjs
 web/src/wasm/pico-vm.wasm
 web/public/pico-vm.wasm
+web/.cert/
 firmware/*/build/
 .pio/
 .DS_Store
 **/.DS_Store
 reviews/
+.cache/

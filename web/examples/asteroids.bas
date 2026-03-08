@@ -24,6 +24,34 @@ DATA ship_icon, $20, $50, $50, $88, $F8
 ' -- Array for asteroid sizes (slots 5-31 = 27 entries) ---------------
 DIM sizes(27)
 
+' -- Background Music (scene 7 main+tension, voices 2-4) ---------------
+EFFECT bg_bass
+  STEP 0,   WAVE_TRI, 0, 255, 90, 0
+  STEP 40,  WAVE_TRI, 0, 255, 60, 0
+  STEP 100, WAVE_TRI, 0, 255, 40, 0
+  STEP 250, OFF
+END EFFECT
+
+EFFECT bg_lead
+  STEP 0,   WAVE_PULSE, 0, 128, 60, 0
+  STEP 15,  WAVE_PULSE, 0, 128, 85, 0
+  STEP 60,  WAVE_PULSE, 0, 128, 70, 0
+  STEP 150, WAVE_PULSE, 0, 128, 50, 0
+  STEP 300, OFF
+END EFFECT
+
+EFFECT bg_arp
+  STEP 0,   WAVE_PULSE, 0, 64, 35, 0
+  STEP 500, OFF
+END EFFECT
+
+' Main(x2) -> Tense(x2) -> Main(x2) -> Ease(x2), looping (~64 sec cycle)
+SONG bg_music, 120, 1
+  TRACK 2, bg_bass, 0, 0, "C2:2 R:2 G1:2 R:2 GS1:2 R:2 AS1:2 R:2 C2:2 R:2 DS2:2 R:2 F2:2 R:2 G1:2 R:2 C2:2 R:2 GS1:2 R:2 AS1:2 R:2 G1:2 R:2 C2:2 R:2 DS2:2 R:2 F2:2 R:2 G2:2 R:2 C2:2 R:2 G1:2 R:2 GS1:2 R:2 AS1:2 R:2 C2:2 R:2 DS2:2 R:2 F2:2 R:2 G1:2 R:2 C2:2 R:2 GS1:2 R:2 AS1:2 R:2 G1:2 R:2 C2:2 R:2 DS2:2 R:2 F2:2 R:2 G2:2 R:2 F1:2 R:2 F1:2 F2:2 R:2 F1:2 R:2 F2:2 GS1:2 R:2 GS1:2 GS2:2 R:2 GS1:2 R:2 GS2:2 AS1:2 R:2 AS1:2 AS2:2 R:2 AS1:1 R:1 AS1:1 R:1 AS2:2 G1:1 R:1 G1:1 R:1 G1:1 R:1 G1:1 R:1 G1:1 R:1 G1:1 R:1 G1:1 R:1 G1:1 R:1 F1:2 R:2 F1:2 F2:2 R:2 F1:2 R:2 F2:2 GS1:2 R:2 GS1:2 GS2:2 R:2 GS1:2 R:2 GS2:2 AS1:2 R:2 AS1:2 AS2:2 R:2 AS1:1 R:1 AS1:1 R:1 AS2:2 G1:1 R:1 G1:1 R:1 G1:1 R:1 G1:1 R:1 G1:1 R:1 G1:1 R:1 G1:1 R:1 G1:1 R:1 C2:2 R:2 G1:2 R:2 GS1:2 R:2 AS1:2 R:2 C2:2 R:2 DS2:2 R:2 F2:2 R:2 G1:2 R:2 C2:2 R:2 GS1:2 R:2 AS1:2 R:2 G1:2 R:2 C2:2 R:2 DS2:2 R:2 F2:2 R:2 G2:2 R:2 C2:2 R:2 G1:2 R:2 GS1:2 R:2 AS1:2 R:2 C2:2 R:2 DS2:2 R:2 F2:2 R:2 G1:2 R:2 C2:2 R:2 GS1:2 R:2 AS1:2 R:2 G1:2 R:2 C2:2 R:2 DS2:2 R:2 F2:2 R:2 G2:2 R:2 C2:8 R:8 DS2:8 R:8 GS1:8 R:8 C2:8 R:8 C2:8 R:8 DS2:8 R:8 GS1:8 R:8 C2:8 R:8"
+  TRACK 3, bg_lead, 0, 0, "G4:1 R:1 DS4:1 R:1 C4:1 DS4:1 G4:1 R:1 GS4:1 R:1 G4:1 R:1 F4:1 R:1 DS4:1 R:1 D4:1 R:1 DS4:1 R:1 F4:1 R:1 G4:1 GS4:1 G4:1 R:1 F4:1 R:1 DS4:1 R:1 D4:1 R:1 C4:1 R:3 DS4:1 R:1 C4:1 R:1 G3:1 R:3 AS3:1 R:3 C4:1 R:1 D4:1 R:1 DS4:1 R:3 C4:1 R:3 G3:1 R:3 G4:1 R:1 DS4:1 R:1 C4:1 DS4:1 G4:1 R:1 GS4:1 R:1 G4:1 R:1 F4:1 R:1 DS4:1 R:1 D4:1 R:1 DS4:1 R:1 F4:1 R:1 G4:1 GS4:1 G4:1 R:1 F4:1 R:1 DS4:1 R:1 D4:1 R:1 C4:1 R:3 DS4:1 R:1 C4:1 R:1 G3:1 R:3 AS3:1 R:3 C4:1 R:1 D4:1 R:1 DS4:1 R:3 C4:1 R:3 G3:1 R:3 F4:1 GS4:1 F4:1 R:1 F4:1 C5:1 GS4:1 R:1 F4:1 GS4:1 F4:1 R:1 C5:1 GS4:1 F4:1 R:1 GS4:1 C5:1 GS4:1 R:1 GS4:1 DS5:1 C5:1 R:1 GS4:1 C5:1 DS5:1 C5:1 GS4:1 R:1 C5:1 R:1 AS4:1 D5:1 F5:1 D5:1 AS4:1 D5:1 F5:1 D5:1 AS4:1 D5:1 F5:1 D5:1 AS4:1 F5:1 D5:1 AS4:1 G4:1 B4:1 D5:1 G5:1 D5:1 B4:1 G4:1 R:1 G4:2 R:2 G4:1 R:1 G4:1 R:1 F4:1 GS4:1 F4:1 R:1 F4:1 C5:1 GS4:1 R:1 F4:1 GS4:1 F4:1 R:1 C5:1 GS4:1 F4:1 R:1 GS4:1 C5:1 GS4:1 R:1 GS4:1 DS5:1 C5:1 R:1 GS4:1 C5:1 DS5:1 C5:1 GS4:1 R:1 C5:1 R:1 AS4:1 D5:1 F5:1 D5:1 AS4:1 D5:1 F5:1 D5:1 AS4:1 D5:1 F5:1 D5:1 AS4:1 F5:1 D5:1 AS4:1 G4:1 B4:1 D5:1 G5:1 D5:1 B4:1 G4:1 R:1 G4:2 R:2 G4:1 R:1 G4:1 R:1 G4:1 R:1 DS4:1 R:1 C4:1 DS4:1 G4:1 R:1 GS4:1 R:1 G4:1 R:1 F4:1 R:1 DS4:1 R:1 D4:1 R:1 DS4:1 R:1 F4:1 R:1 G4:1 GS4:1 G4:1 R:1 F4:1 R:1 DS4:1 R:1 D4:1 R:1 C4:1 R:3 DS4:1 R:1 C4:1 R:1 G3:1 R:3 AS3:1 R:3 C4:1 R:1 D4:1 R:1 DS4:1 R:3 C4:1 R:3 G3:1 R:3 G4:1 R:1 DS4:1 R:1 C4:1 DS4:1 G4:1 R:1 GS4:1 R:1 G4:1 R:1 F4:1 R:1 DS4:1 R:1 D4:1 R:1 DS4:1 R:1 F4:1 R:1 G4:1 GS4:1 G4:1 R:1 F4:1 R:1 DS4:1 R:1 D4:1 R:1 C4:1 R:3 DS4:1 R:1 C4:1 R:1 G3:1 R:3 AS3:1 R:3 C4:1 R:1 D4:1 R:1 DS4:1 R:3 C4:1 R:3 G3:1 R:3 G4:4 R:4 DS4:4 C4:4 DS4:8 C4:8 AS3:4 R:4 GS3:4 R:4 C4:8 R:8 G4:4 R:4 DS4:4 C4:4 DS4:8 C4:8 AS3:4 R:4 GS3:4 R:4 C4:8 R:8"
+  TRACK 4, bg_arp, 0, 0, "C4:1 DS4:1 G4:1 C5:1 C4:1 DS4:1 G4:1 C5:1 GS3:1 C4:1 DS4:1 GS4:1 GS3:1 C4:1 DS4:1 GS4:1 AS3:1 D4:1 F4:1 AS4:1 AS3:1 D4:1 F4:1 AS4:1 G3:1 B3:1 D4:1 G4:1 G3:1 B3:1 D4:1 G4:1 C4:2 DS4:2 G4:2 C5:2 C4:2 DS4:2 G4:2 C5:2 GS3:2 C4:2 DS4:2 GS4:2 GS3:2 C4:2 DS4:2 GS4:2 C4:1 DS4:1 G4:1 C5:1 C4:1 DS4:1 G4:1 C5:1 GS3:1 C4:1 DS4:1 GS4:1 GS3:1 C4:1 DS4:1 GS4:1 AS3:1 D4:1 F4:1 AS4:1 AS3:1 D4:1 F4:1 AS4:1 G3:1 B3:1 D4:1 G4:1 G3:1 B3:1 D4:1 G4:1 C4:2 DS4:2 G4:2 C5:2 C4:2 DS4:2 G4:2 C5:2 GS3:2 C4:2 DS4:2 GS4:2 GS3:2 C4:2 DS4:2 GS4:2 F3:1 GS3:1 C4:1 F4:1 F3:1 GS3:1 C4:1 F4:1 F3:1 GS3:1 C4:1 F4:1 F3:1 GS3:1 C4:1 F4:1 GS3:1 C4:1 DS4:1 GS4:1 GS3:1 C4:1 DS4:1 GS4:1 GS3:1 C4:1 DS4:1 GS4:1 GS3:1 C4:1 DS4:1 GS4:1 AS3:1 D4:1 F4:1 AS4:1 AS3:1 D4:1 F4:1 AS4:1 AS3:1 D4:1 F4:1 AS4:1 AS3:1 D4:1 F4:1 AS4:1 G3:1 B3:1 D4:1 F4:1 G3:1 B3:1 D4:1 F4:1 G3:1 B3:1 D4:1 F4:1 G3:1 B3:1 D4:1 F4:1 F3:1 GS3:1 C4:1 F4:1 F3:1 GS3:1 C4:1 F4:1 F3:1 GS3:1 C4:1 F4:1 F3:1 GS3:1 C4:1 F4:1 GS3:1 C4:1 DS4:1 GS4:1 GS3:1 C4:1 DS4:1 GS4:1 GS3:1 C4:1 DS4:1 GS4:1 GS3:1 C4:1 DS4:1 GS4:1 AS3:1 D4:1 F4:1 AS4:1 AS3:1 D4:1 F4:1 AS4:1 AS3:1 D4:1 F4:1 AS4:1 AS3:1 D4:1 F4:1 AS4:1 G3:1 B3:1 D4:1 F4:1 G3:1 B3:1 D4:1 F4:1 G3:1 B3:1 D4:1 F4:1 G3:1 B3:1 D4:1 F4:1 C4:1 DS4:1 G4:1 C5:1 C4:1 DS4:1 G4:1 C5:1 GS3:1 C4:1 DS4:1 GS4:1 GS3:1 C4:1 DS4:1 GS4:1 AS3:1 D4:1 F4:1 AS4:1 AS3:1 D4:1 F4:1 AS4:1 G3:1 B3:1 D4:1 G4:1 G3:1 B3:1 D4:1 G4:1 C4:2 DS4:2 G4:2 C5:2 C4:2 DS4:2 G4:2 C5:2 GS3:2 C4:2 DS4:2 GS4:2 GS3:2 C4:2 DS4:2 GS4:2 C4:1 DS4:1 G4:1 C5:1 C4:1 DS4:1 G4:1 C5:1 GS3:1 C4:1 DS4:1 GS4:1 GS3:1 C4:1 DS4:1 GS4:1 AS3:1 D4:1 F4:1 AS4:1 AS3:1 D4:1 F4:1 AS4:1 G3:1 B3:1 D4:1 G4:1 G3:1 B3:1 D4:1 G4:1 C4:2 DS4:2 G4:2 C5:2 C4:2 DS4:2 G4:2 C5:2 GS3:2 C4:2 DS4:2 GS4:2 GS3:2 C4:2 DS4:2 GS4:2 C4:2 DS4:2 G4:2 C5:2 C4:2 DS4:2 G4:2 C5:2 DS4:2 G4:2 AS4:2 DS5:2 DS4:2 G4:2 AS4:2 DS5:2 GS3:2 C4:2 DS4:2 GS4:2 GS3:2 C4:2 DS4:2 GS4:2 C4:2 DS4:2 G4:2 C5:2 C4:2 DS4:2 G4:2 C5:2 C4:2 DS4:2 G4:2 C5:2 C4:2 DS4:2 G4:2 C5:2 DS4:2 G4:2 AS4:2 DS5:2 DS4:2 G4:2 AS4:2 DS5:2 GS3:2 C4:2 DS4:2 GS4:2 GS3:2 C4:2 DS4:2 GS4:2 C4:2 DS4:2 G4:2 C5:2 C4:2 DS4:2 G4:2 C5:2"
+END SONG
+
 ' ====================================================================
 ' Subroutines
 ' ====================================================================
@@ -41,16 +69,14 @@ SUB init_game()
   score = 0
   wave = 0
   was_thrust = 0
-  music_tick = 0
-  music_step = 0
-  music_next = 1
-  music_gate = 0
-  music_gate_until = 0
 
   ' Thrust sound: voice 0 = low rumble, voice 1 = high hiss
   ENVELOPE 0, 8, 0, 100, 20
   ENVELOPE 1, 5, 0, 50, 15
-  ENVELOPE 2, 18, 70, 96, 90
+
+  ' Background music on voices 2-4
+  VFILTER 2, 100, 30, FILTER_LP
+  MPLAY bg_music
 
   SPRITE 0, ship_vecs, 9, 9, 60, 28, SPR_VECTOR, 0, 0, EDGE_WRAP
   SPR_GROUP 0, 1, 2
@@ -65,88 +91,6 @@ SUB init_game()
     sizes(i) = 0
   NEXT
   spawn_wave
-END SUB
-
-SUB trigger_music_note()
-  pattern = music_step MOD 12
-  variant = (wave + (score SHR 8)) MOD 3
-  mfreq = 0
-  mwave = WAVE_TRI
-  mpw = 0
-
-  IF pattern = 0 THEN
-    mfreq = 55
-  ELSEIF pattern = 1 THEN
-    mfreq = 0
-  ELSEIF pattern = 2 THEN
-    IF variant = 0 THEN
-      mfreq = 65
-    ELSEIF variant = 1 THEN
-      mfreq = 73
-    ELSE
-      mfreq = 82
-    END IF
-  ELSEIF pattern = 3 THEN
-    mfreq = 0
-  ELSEIF pattern = 4 THEN
-    IF variant = 2 THEN
-      mfreq = 49
-    ELSE
-      mfreq = 55
-    END IF
-  ELSEIF pattern = 5 THEN
-    mfreq = 0
-  ELSEIF pattern = 6 THEN
-    IF variant = 0 THEN
-      mfreq = 73
-    ELSEIF variant = 1 THEN
-      mfreq = 58
-    ELSE
-      mfreq = 65
-    END IF
-  ELSEIF pattern = 7 THEN
-    mfreq = 0
-  ELSEIF pattern = 8 THEN
-    mfreq = 55
-  ELSEIF pattern = 9 THEN
-    mfreq = 0
-  ELSEIF pattern = 10 THEN
-    IF variant = 1 THEN
-      mfreq = 87
-    ELSE
-      mfreq = 73
-    END IF
-  ELSE
-    mfreq = 0
-  END IF
-
-  IF mfreq <> 0 THEN
-    ENVELOPE 2, 18, 60, 56, 84
-    VOICE 2, mwave, mfreq, mpw
-    music_gate = 1
-    music_gate_until = music_tick + 12 + ((music_step + wave) MOD 10)
-  ELSE
-    NOTEOFF 2
-    music_gate = 0
-  END IF
-
-  music_next = music_tick + 24 + ((music_step + wave) MOD 16)
-  music_step = music_step + 1
-END SUB
-
-SUB update_music()
-  music_tick = music_tick + 1
-
-  IF music_gate = 1 THEN
-    IF music_tick >= music_gate_until THEN
-      NOTEOFF 2
-      music_gate = 0
-    END IF
-  END IF
-
-  IF music_tick >= music_next THEN
-    trigger_music_note
-  END IF
 END SUB
 
 SUB check_collisions()
@@ -207,10 +151,10 @@ SUB check_collisions()
               SFX SFX_EXPLODE, 5
             ELSEIF old_size = 2 THEN
               score = score + 50
-              SFX SFX_HIT, 4
+              SFX SFX_HIT, 5
             ELSE
               score = score + 25
-              SFX SFX_BLIP, 3
+              SFX SFX_BLIP, 5
             END IF
 
             ' Split if not small (size < 3)
@@ -263,7 +207,7 @@ END SUB
 
 SUB spawn_wave()
   wave = wave + 1
-  IF wave > 1 THEN SFX SFX_POWERUP, 3
+  IF wave > 1 THEN SFX SFX_POWERUP, 5
   wcount = wave + 3
   IF wcount > 27 THEN wcount = 27
 
@@ -297,7 +241,6 @@ DO
   ' -- Game loop -------------------------------------------------------
   DO WHILE game_state = 0
     check_collisions
-    update_music
 
     ' Check if all asteroids destroyed -> next wave
     IF ast_count = 0 THEN spawn_wave
@@ -401,7 +344,7 @@ DO
         SPRITE bslot, bullet_bmp, 2, 2, sx, sy, 0, bvx, bvy, EDGE_DESTROY
         SPR_GROUP bslot, 4, 2
         SPR_COLL bslot, COLL_DESTROY
-        SFX SFX_LASER, 4
+        SFX SFX_LASER, 5
 
         cooldown = 16
       END IF
@@ -424,7 +367,6 @@ DO
   ' -- Game over screen ------------------------------------------------
   NOTEOFF 0
   NOTEOFF 1
-  NOTEOFF 2
   FOR gs = 0 TO 31
     SPR_OFF gs
   NEXT

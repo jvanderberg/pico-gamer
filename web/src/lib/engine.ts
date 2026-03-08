@@ -260,10 +260,10 @@ export async function createEngine(
       const depthRaw = vm.readMem16((trackBase + 5) & 0xffff);
       const vibratoDepth = depthRaw & 0x8000 ? depthRaw - 0x10000 : depthRaw;
       const eventsAddr = vm.readMem16((trackBase + 7) & 0xffff);
-      const eventCount = vm.readMem(eventsAddr & 0xffff);
+      const eventCount = vm.readMem16(eventsAddr & 0xffff);
       const events = [];
       for (let j = 0; j < eventCount; j++) {
-        const eventBase = (eventsAddr + 1 + j * 2) & 0xffff;
+        const eventBase = (eventsAddr + 2 + j * 2) & 0xffff;
         const pitch = vm.readMem(eventBase);
         const duration = vm.readMem((eventBase + 1) & 0xffff);
         events.push({ pitch: pitch === SONG_REST_PITCH ? SONG_REST_PITCH : pitch, duration });
@@ -451,7 +451,10 @@ export async function createEngine(
       startTime = performance.now();
       lastFrameTime = performance.now() / 1000;
       accumulator = FRAME_DT; // trigger first frame immediately
-      audio.resume();
+      void audio.resume().catch((err) => {
+        currentError = `Audio init failed: ${(err as Error).message}`;
+        emitUpdate();
+      });
       emitUpdate();
       animFrame = requestAnimationFrame(runFrame);
     },

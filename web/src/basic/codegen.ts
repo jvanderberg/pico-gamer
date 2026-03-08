@@ -301,8 +301,8 @@ function parseSongPattern(pattern: string): SongEventDef[] {
   if (events.length === 0) {
     throw new Error("Song track pattern must contain at least one event");
   }
-  if (events.length > 255) {
-    throw new Error("Song track exceeds 255 events");
+  if (events.length > 65535) {
+    throw new Error("Song track exceeds 65535 events");
   }
   return events;
 }
@@ -894,7 +894,7 @@ function emitSong(
       throw new Error(`Song track ${i} pattern must be a string literal`);
     }
     const events = parseSongPattern(track.pattern.value);
-    const bytes: number[] = [events.length & 0xff];
+    const bytes: number[] = [events.length & 0xff, (events.length >> 8) & 0xff];
     for (const event of events) {
       bytes.push(event.pitch & 0xff, event.duration & 0xff);
     }

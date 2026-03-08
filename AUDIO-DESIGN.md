@@ -14,6 +14,8 @@ Pico-Gamer now uses one synth model across the web emulator and device firmware:
 - one master filter on the summed mix
 - built-in SFX presets plus custom `EFFECT` data from VM memory
 - `NOTE` for pitched instruments and `SFX` for absolute-pitch effects
+- `SONG` / `TRACK` data for simple sequenced playback
+- `MPLAY` / `MSTOP` for song transport
 
 There are currently two firmware consumers:
 
@@ -122,7 +124,7 @@ There is no separate master `DRIVE` command yet.
 
 ## Runtime Commands
 
-The VM/audio command range is `0x30-0x39`.
+The VM/audio command range is `0x30-0x3B`.
 
 | ID | BASIC | Meaning |
 |---|---|---|
@@ -136,6 +138,8 @@ The VM/audio command range is `0x30-0x39`.
 | `0x37` | `VFILTER voice, cutoff, resonance, mode` | voice-local filter |
 | `0x38` | `NOTE effect, voice, pitch[, vib_rate64, vib_depth]` | play a custom instrument at pitch |
 | `0x39` | `VDRIVE voice, amount` | per-voice drive |
+| `0x3A` | `MPLAY song` | start a compiled song |
+| `0x3B` | `MSTOP` | stop the active song |
 
 ## BASIC Audio Model
 
@@ -144,7 +148,7 @@ There are two layers:
 - direct synth control
   - `VOICE`, `ENVELOPE`, `NOTEOFF`, `VFILTER`, `VDRIVE`, `FILTER`, `VOLUME`, `TONE`
 - data-driven playback
-  - `EFFECT`, `STEP`, `SFX`, `NOTE`
+  - `EFFECT`, `STEP`, `SFX`, `NOTE`, `SONG`, `TRACK`, `MPLAY`, `MSTOP`
 
 ### Direct Control Example
 
@@ -290,17 +294,91 @@ The built-in preset table still ships for convenience:
 
 Preset IDs below `16` are treated as built-ins. Custom effects are compiled into VM memory and passed by address.
 
+## SONG / TRACK / MPLAY
+
+The current runtime includes a simple song sequencer on top of `EFFECT` and `NOTE`.
+
+BASIC syntax:
+
+```basic
+SONG spacey, 92, 1
+  TRACK 0, bass, 0,   0, "C2:8 R:4 GS1:8 R:4"
+  TRACK 1, lead, 320, 8, "R:8 C4:4 DS4:4 G4:8"
+END SONG
+
+MPLAY spacey
+MSTOP
+```
+
+Song fields:
+
+- `SONG name, bpm, loop`
+- `bpm` is stored as `u8`; the runtime clamps values below `1` up to `1`
+- `loop` is boolean-like: `0` stops at the end, nonzero loops
+- each `TRACK` is `TRACK voice, effect, vibratoRate64, vibratoDepth, pattern`
+- `voice` is `0..5`
+- `effect` must reference a custom `EFFECT`
+- `vibratoRate64` is in `1/64 Hz`
+- `vibratoDepth` is in cents
+- `pattern` must be a string literal
+
+Pattern token format:
+
+- notes: `C4:4`, `DS4:2`, `F2:8`
+- rests: `R:4` or `-:4`
+- separators: spaces or commas
+- accidentals: `#` or `S`
+- octave range: `0..8`
+- duration range: `1..255`
+
+Timing:
+
+- one duration unit is one quarter of a beat
+- `4` duration units equals one beat at the song BPM
+- track vibrato settings are applied to every note event in that track
+
+Transport behavior:
+
+- `MPLAY` stops any currently playing song, then starts the new song from the beginning
+- `MSTOP` stops the active song and releases its voices
+
+### Song Binary Format
+
+Songs compile to VM memory in this layout:
+
+- byte `0`
+  - track count
+- byte `1`
+  - BPM
+- byte `2`
+  - loop flag
+- then one track record per track, 9 bytes each:
+  - byte `0`
+    - voice
+  - bytes `1-2`
+    - effect address
+  - bytes `3-4`
+    - vibrato rate in `1/64 Hz`
+  - bytes `5-6`
+    - vibrato depth in cents
+  - bytes `7-8`
+    - event-list address
+- each event list is:
+  - bytes `0-1`
+    - event count as little-endian `u16`
+  - then `N` 2-byte events:
+    - byte `0`
+      - pitch (`0xFF` means rest)
+    - byte `1`
+      - duration
+
 ## Music Today
-
-There is no dedicated `MUSIC` sequencer syscall in the current implementation.
-
-Games build music by scheduling `NOTE` calls from BASIC or VM code. That is how current background music experiments work on both web and device.
 
 The intended layering is:
 
 - `EFFECT` defines instrument shape over time
 - `NOTE` plays that shape at pitch
-- game code or a future higher-level sequencer decides when notes happen
+- `SONG` / `TRACK` provides a compact built-in sequencer format for scheduled note playback
 
 If a dedicated music API is added later, it should sit on top of `EFFECT` and `NOTE`, not introduce a second unrelated engine.
 
