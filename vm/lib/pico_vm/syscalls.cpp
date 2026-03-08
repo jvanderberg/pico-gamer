@@ -481,17 +481,46 @@ void handleSyscall(uint8_t id, VMState& vm, void* ctxPtr) {
         }
 
         case SYS_FILTER: {
-            // [cutoff, resonance, mode, routing]
-            uint16_t routing = pop(vm);
+            // [cutoff, resonance, mode]
             uint16_t mode    = pop(vm);
             uint16_t reso    = pop(vm);
             uint16_t cutoff  = pop(vm);
             if (ctx.audio.count < AUDIO_CMD_MAX) {
                 AudioCmd& cmd = ctx.audio.cmds[ctx.audio.count++];
                 cmd.id = SYS_FILTER;
-                cmd.argCount = 4;
+                cmd.argCount = 3;
                 cmd.args[0] = cutoff;  cmd.args[1] = reso;
-                cmd.args[2] = mode;    cmd.args[3] = routing;
+                cmd.args[2] = mode;
+            }
+            break;
+        }
+
+        case SYS_VFILTER: {
+            // [voice, cutoff, resonance, mode]
+            uint16_t mode    = pop(vm);
+            uint16_t reso    = pop(vm);
+            uint16_t cutoff  = pop(vm);
+            uint16_t voice   = pop(vm);
+            if (ctx.audio.count < AUDIO_CMD_MAX) {
+                AudioCmd& cmd = ctx.audio.cmds[ctx.audio.count++];
+                cmd.id = SYS_VFILTER;
+                cmd.argCount = 4;
+                cmd.args[0] = voice;   cmd.args[1] = cutoff;
+                cmd.args[2] = reso;    cmd.args[3] = mode;
+            }
+            break;
+        }
+
+        case SYS_VDRIVE: {
+            // [voice, amount]
+            uint16_t amount = pop(vm);
+            uint16_t voice  = pop(vm);
+            if (ctx.audio.count < AUDIO_CMD_MAX) {
+                AudioCmd& cmd = ctx.audio.cmds[ctx.audio.count++];
+                cmd.id = SYS_VDRIVE;
+                cmd.argCount = 2;
+                cmd.args[0] = voice;
+                cmd.args[1] = amount;
             }
             break;
         }
@@ -528,6 +557,44 @@ void handleSyscall(uint8_t id, VMState& vm, void* ctxPtr) {
                 cmd.id = SYS_SFX;
                 cmd.argCount = 2;
                 cmd.args[0] = effectId; cmd.args[1] = voice;
+            }
+            break;
+        }
+
+        case SYS_NOTE: {
+            // [effect_addr_or_id, voice, pitch, vibrato_rate_64hz, vibrato_depth_cents]
+            uint16_t depth  = pop(vm);
+            uint16_t rate   = pop(vm);
+            uint16_t pitch  = pop(vm);
+            uint16_t voice  = pop(vm);
+            uint16_t effect = pop(vm);
+            if (ctx.audio.count < AUDIO_CMD_MAX) {
+                AudioCmd& cmd = ctx.audio.cmds[ctx.audio.count++];
+                cmd.id = SYS_NOTE;
+                cmd.argCount = 5;
+                cmd.args[0] = effect; cmd.args[1] = voice;
+                cmd.args[2] = pitch;  cmd.args[3] = rate;
+                cmd.args[4] = depth;
+            }
+            break;
+        }
+
+        case SYS_MPLAY: {
+            uint16_t song = pop(vm);
+            if (ctx.audio.count < AUDIO_CMD_MAX) {
+                AudioCmd& cmd = ctx.audio.cmds[ctx.audio.count++];
+                cmd.id = SYS_MPLAY;
+                cmd.argCount = 1;
+                cmd.args[0] = song;
+            }
+            break;
+        }
+
+        case SYS_MSTOP: {
+            if (ctx.audio.count < AUDIO_CMD_MAX) {
+                AudioCmd& cmd = ctx.audio.cmds[ctx.audio.count++];
+                cmd.id = SYS_MSTOP;
+                cmd.argCount = 0;
             }
             break;
         }

@@ -6,7 +6,8 @@ const KEYWORDS = new Set([
   "FOR", "TO", "STEP", "NEXT",
   "DO", "LOOP", "WHILE", "UNTIL",
   "GOTO", "SUB", "EXIT",
-  "DIM", "CONST", "DATA", "CALLBACK", "REM",
+  "DIM", "CONST", "DATA", "EFFECT", "SONG", "TRACK", "CALLBACK", "REM",
+  "MPLAY", "MSTOP",
 ]);
 
 const BUILTIN_CONSTS = new Set([
@@ -17,12 +18,18 @@ const BUILTIN_CONSTS = new Set([
   "COLL_NONE", "COLL_DETECT", "COLL_BOUNCE", "COLL_DESTROY", "COLL_STOP",
   "SPR_FLIPX", "SPR_FLIPY", "SPR_VECTOR",
   "PFX_ALL", "PFX_2X2", "PFX_BLACK", "PFX_SPEED_VAR", "PFX_LIFE_VAR",
-  "WAVE_OFF", "WAVE_PULSE", "WAVE_SAW", "WAVE_TRI", "WAVE_NOISE",
-  "FILTER_LP", "FILTER_BP", "FILTER_HP",
+  "OFF", "WAVE_OFF", "WAVE_PULSE", "WAVE_SAW", "WAVE_TRI", "WAVE_NOISE",
+  "FILTER_LP", "FILTER_BP", "FILTER_HP", "FILTER_NOTCH", "FILTER_COMB",
   "SFX_LASER", "SFX_EXPLODE", "SFX_PICKUP", "SFX_JUMP", "SFX_HIT",
   "SFX_BOUNCE", "SFX_POWERUP", "SFX_DEATH", "SFX_COIN", "SFX_BEEP",
   "SFX_THUD", "SFX_ZAP", "SFX_ALARM", "SFX_CLICK", "SFX_WHOOSH", "SFX_BLIP",
 ]);
+
+for (const note of ["C", "CS", "D", "DS", "E", "F", "FS", "G", "GS", "A", "AS", "B"]) {
+  for (let octave = 0; octave <= 8; octave++) {
+    BUILTIN_CONSTS.add(`${note}${octave}`);
+  }
+}
 
 interface BasicState {
   afterConst: boolean;

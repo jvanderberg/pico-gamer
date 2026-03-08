@@ -161,6 +161,37 @@ export interface DataStmt {
   bytes: number[];
 }
 
+export interface EffectStepDef {
+  delay: Expr;
+  waveform: Expr;
+  freq: Expr | null;
+  pulseWidth: Expr | null;
+  volume: Expr | null;
+  filterCutoff: Expr | null;
+}
+
+export interface EffectStmt {
+  kind: "effect";
+  name: string;
+  steps: EffectStepDef[];
+}
+
+export interface SongTrackDef {
+  voice: Expr;
+  effect: Expr;
+  vibratoRate: Expr;
+  vibratoDepth: Expr;
+  pattern: Expr;
+}
+
+export interface SongStmt {
+  kind: "song";
+  name: string;
+  bpm: Expr;
+  loop: Expr;
+  tracks: SongTrackDef[];
+}
+
 export interface PokeStmt {
   kind: "poke";
   wide: boolean;
@@ -196,6 +227,8 @@ export type Stmt =
   | DimStmt
   | ConstStmt
   | DataStmt
+  | EffectStmt
+  | SongStmt
   | PokeStmt
   | SubCallStmt
   | TupleAssignStmt;

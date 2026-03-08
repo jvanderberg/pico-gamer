@@ -50,6 +50,7 @@ const BUILTIN_CONSTS: Record<string, number> = {
   PFX_LIFE_VAR: 32,
 
   // Waveform IDs
+  OFF: 0,
   WAVE_OFF: 0,
   WAVE_PULSE: 1,
   WAVE_SAW: 2,
@@ -60,6 +61,8 @@ const BUILTIN_CONSTS: Record<string, number> = {
   FILTER_LP: 0,
   FILTER_BP: 1,
   FILTER_HP: 2,
+  FILTER_NOTCH: 3,
+  FILTER_COMB: 4,
 
   // SFX preset IDs
   SFX_LASER: 0,
@@ -79,6 +82,13 @@ const BUILTIN_CONSTS: Record<string, number> = {
   SFX_WHOOSH: 14,
   SFX_BLIP: 15,
 };
+
+const NOTE_NAMES = ["C", "CS", "D", "DS", "E", "F", "FS", "G", "GS", "A", "AS", "B"];
+for (let octave = 0; octave <= 8; octave++) {
+  for (let semitone = 0; semitone < NOTE_NAMES.length; semitone++) {
+    BUILTIN_CONSTS[`${NOTE_NAMES[semitone]}${octave}`] = 12 + octave * 12 + semitone;
+  }
+}
 
 interface CodeGenState {
   lines: string[];
@@ -105,6 +115,15 @@ interface CodeGenState {
   inSub: boolean;
   /** SUB name → param names (for resolving call-site arg passing) */
   subParams: Map<string, string[]>;
+}
+
+interface EffectStepDef {
+  delay: Expr;
+  waveform: Expr;
+  freq: Expr | null;
+  pulseWidth: Expr | null;
+  volume: Expr | null;
+  filterCutoff: Expr | null;
 }
 
 function createState(): CodeGenState {
@@ -143,6 +162,22 @@ function emitLabel(s: CodeGenState, label: string): void {
   emit(s, `${label}:`);
 }
 
+function dataLabel(name: string): string {
+  return `__data_${name.toLowerCase()}`;
+}
+
+function effectLabel(name: string): string {
+  return `__effect_${name.toLowerCase()}`;
+}
+
+function songLabel(name: string): string {
+  return `__song_${name.toLowerCase()}`;
+}
+
+function songTrackEventsLabel(songName: string, trackIndex: number): string {
+  return `__song_${songName.toLowerCase()}_events_${trackIndex}`;
+}
+
 /** Get or allocate a 2-byte variable address. */
 function varAddr(s: CodeGenState, name: string): number {
   // Check constants first
@@ -164,6 +199,123 @@ function resolveValue(s: CodeGenState, name: string): { kind: "const"; value: nu
   const c = s.consts.get(upper);
   if (c !== undefined) return { kind: "const", value: c };
   return { kind: "addr", addr: varAddr(s, name) };
+}
+
+function evalConstExpr(s: CodeGenState, expr: Expr): number {
+  switch (expr.kind) {
+    case "number":
+      return expr.value & 0xffff;
+    case "variable": {
+      const c = s.consts.get(expr.name.toUpperCase());
+      if (c === undefined) throw new Error(`Compile-time constant required: ${expr.name}`);
+      return c & 0xffff;
+    }
+    case "unary": {
+      const operand = evalConstExpr(s, expr.operand);
+      if (expr.op === "NEG") return (-operand) & 0xffff;
+      if (expr.op === "NOT") return (~operand) & 0xffff;
+      break;
+    }
+    case "binary": {
+      const left = evalConstExpr(s, expr.left);
+      const right = evalConstExpr(s, expr.right);
+      switch (expr.op) {
+        case "ADD": return (left + right) & 0xffff;
+        case "SUB": return (left - right) & 0xffff;
+        case "MUL": return (left * right) & 0xffff;
+        case "DIV": return right === 0 ? 0 : Math.floor(left / right) & 0xffff;
+        case "MOD": return right === 0 ? 0 : (left % right) & 0xffff;
+        case "AND": return (left & right) & 0xffff;
+        case "OR": return (left | right) & 0xffff;
+        case "XOR": return (left ^ right) & 0xffff;
+        case "SHL": return (left << right) & 0xffff;
+        case "SHR": return (left >>> right) & 0xffff;
+        case "EQ": return left === right ? 1 : 0;
+        case "NEQ": return left !== right ? 1 : 0;
+        case "LT": return left < right ? 1 : 0;
+        case "GT": return left > right ? 1 : 0;
+        case "LTE": return left <= right ? 1 : 0;
+        case "GTE": return left >= right ? 1 : 0;
+      }
+      break;
+    }
+    default:
+      break;
+  }
+  throw new Error("Compile-time constant required");
+}
+
+interface SongEventDef {
+  pitch: number;
+  duration: number;
+}
+
+const SONG_REST_PITCH = 0xff;
+
+function parseSongPattern(pattern: string): SongEventDef[] {
+  const tokens = pattern.split(/[\s,]+/).map((token) => token.trim()).filter(Boolean);
+  const events: SongEventDef[] = [];
+  const semitones: Record<string, number> = {
+    C: 0,
+    D: 2,
+    E: 4,
+    F: 5,
+    G: 7,
+    A: 9,
+    B: 11,
+  };
+
+  for (const token of tokens) {
+    const restMatch = /^R:(\d+)$/i.exec(token) ?? /^-:(\d+)$/i.exec(token);
+    if (restMatch) {
+      const duration = parseInt(restMatch[1]!, 10);
+      if (!Number.isFinite(duration) || duration <= 0 || duration > 255) {
+        throw new Error(`Invalid song rest duration: ${token}`);
+      }
+      events.push({ pitch: SONG_REST_PITCH, duration });
+      continue;
+    }
+
+    const noteMatch = /^([A-Ga-g])((?:#|S)?)([0-8]):(\d+)$/.exec(token);
+    if (!noteMatch) {
+      throw new Error(`Invalid song note token: ${token}`);
+    }
+
+    const letter = noteMatch[1]!.toUpperCase();
+    const accidental = noteMatch[2]!.toUpperCase();
+    const octave = parseInt(noteMatch[3]!, 10);
+    const duration = parseInt(noteMatch[4]!, 10);
+    if (!Number.isFinite(duration) || duration <= 0 || duration > 255) {
+      throw new Error(`Invalid song note duration: ${token}`);
+    }
+
+    let semitone = semitones[letter]!;
+    if (accidental === "#" || accidental === "S") semitone += 1;
+    const pitch = 12 + octave * 12 + semitone;
+    if (pitch < 0 || pitch > 127) {
+      throw new Error(`Song note out of MIDI range: ${token}`);
+    }
+    events.push({ pitch, duration });
+  }
+
+  if (events.length === 0) {
+    throw new Error("Song track pattern must contain at least one event");
+  }
+  if (events.length > 255) {
+    throw new Error("Song track exceeds 255 events");
+  }
+  return events;
+}
+
+function resolveDataReference(s: CodeGenState, expr: Expr, what: string): string {
+  if (expr.kind !== "variable") {
+    throw new Error(`${what} must be a named label`);
+  }
+  const label = s.dataLabels.get(expr.name.toUpperCase());
+  if (!label) {
+    throw new Error(`Unknown ${what}: ${expr.name}`);
+  }
+  return label;
 }
 
 function pushImmediate(s: CodeGenState, value: number): void {
@@ -663,10 +815,92 @@ function emitData(
   s: CodeGenState,
   stmt: { name: string; bytes: number[] },
 ): void {
-  const label = `__data_${stmt.name.toLowerCase()}`;
+  const label = dataLabel(stmt.name);
   s.dataLabels.set(stmt.name.toUpperCase(), label);
   s.dataSection.push(`${label}:`);
   s.dataSection.push(`  .data ${stmt.bytes.join(", ")}`);
+}
+
+function emitEffect(
+  s: CodeGenState,
+  stmt: { name: string; steps: EffectStepDef[] },
+): void {
+  if (stmt.steps.length > 255) {
+    throw new Error(`Effect ${stmt.name} exceeds 255 steps`);
+  }
+
+  const bytes: number[] = [stmt.steps.length & 0xff];
+  for (const step of stmt.steps) {
+    const delay = evalConstExpr(s, step.delay) & 0xffff;
+    const waveform = evalConstExpr(s, step.waveform) & 0xff;
+    const freq = step.freq ? evalConstExpr(s, step.freq) & 0xffff : 0;
+    const pulseWidth = step.pulseWidth ? evalConstExpr(s, step.pulseWidth) & 0xff : 0xff;
+    const volume = step.volume ? evalConstExpr(s, step.volume) & 0xff : 0xff;
+    const filterCutoff = step.filterCutoff ? evalConstExpr(s, step.filterCutoff) & 0xff : 0;
+
+    bytes.push(delay & 0xff, (delay >> 8) & 0xff);
+    bytes.push(waveform);
+    bytes.push(freq & 0xff, (freq >> 8) & 0xff);
+    bytes.push(pulseWidth, volume, filterCutoff);
+  }
+
+  const label = effectLabel(stmt.name);
+  s.dataLabels.set(stmt.name.toUpperCase(), label);
+  s.dataSection.push(`${label}:`);
+  s.dataSection.push(`  .data ${bytes.join(", ")}`);
+}
+
+function emitSong(
+  s: CodeGenState,
+  stmt: {
+    name: string;
+    bpm: Expr;
+    loop: Expr;
+    tracks: Array<{
+      voice: Expr;
+      effect: Expr;
+      vibratoRate: Expr;
+      vibratoDepth: Expr;
+      pattern: Expr;
+    }>;
+  },
+): void {
+  if (stmt.tracks.length === 0) {
+    throw new Error(`Song ${stmt.name} must contain at least one TRACK`);
+  }
+  if (stmt.tracks.length > 255) {
+    throw new Error(`Song ${stmt.name} exceeds 255 tracks`);
+  }
+
+  const label = songLabel(stmt.name);
+  s.dataLabels.set(stmt.name.toUpperCase(), label);
+  s.dataSection.push(`${label}:`);
+  s.dataSection.push(`  .data ${stmt.tracks.length & 0xff}, ${evalConstExpr(s, stmt.bpm) & 0xff}, ${evalConstExpr(s, stmt.loop) & 0xff}`);
+
+  for (let i = 0; i < stmt.tracks.length; i++) {
+    const track = stmt.tracks[i]!;
+    const voice = evalConstExpr(s, track.voice) & 0xff;
+    const vibratoRate = evalConstExpr(s, track.vibratoRate) & 0xffff;
+    const vibratoDepth = evalConstExpr(s, track.vibratoDepth) & 0xffff;
+    const effectRef = resolveDataReference(s, track.effect, "track effect");
+    const eventsLabel = songTrackEventsLabel(stmt.name, i);
+    s.dataSection.push(`  .data ${voice}`);
+    s.dataSection.push(`  .data16 ${effectRef}, ${vibratoRate}, ${vibratoDepth}, ${eventsLabel}`);
+  }
+
+  for (let i = 0; i < stmt.tracks.length; i++) {
+    const track = stmt.tracks[i]!;
+    if (track.pattern.kind !== "string") {
+      throw new Error(`Song track ${i} pattern must be a string literal`);
+    }
+    const events = parseSongPattern(track.pattern.value);
+    const bytes: number[] = [events.length & 0xff];
+    for (const event of events) {
+      bytes.push(event.pitch & 0xff, event.duration & 0xff);
+    }
+    s.dataSection.push(`${songTrackEventsLabel(stmt.name, i)}:`);
+    s.dataSection.push(`  .data ${bytes.join(", ")}`);
+  }
 }
 
 function emitPoke(
@@ -733,6 +967,20 @@ function collectSubs(stmts: Stmt[]): Map<string, string[]> {
   return subs;
 }
 
+function collectDataLabels(stmts: Stmt[]): Map<string, string> {
+  const labels = new Map<string, string>();
+  for (const stmt of stmts) {
+    if (stmt.kind === "effect") {
+      labels.set(stmt.name.toUpperCase(), effectLabel(stmt.name));
+    } else if (stmt.kind === "data") {
+      labels.set(stmt.name.toUpperCase(), dataLabel(stmt.name));
+    } else if (stmt.kind === "song") {
+      labels.set(stmt.name.toUpperCase(), songLabel(stmt.name));
+    }
+  }
+  return labels;
+}
+
 export function generate(program: Program): string {
   const s = createState();
 
@@ -743,6 +991,7 @@ export function generate(program: Program): string {
 
   // Pre-pass: collect SUB param info so emitSubCall can resolve them
   s.subParams = collectSubs(program.statements);
+  s.dataLabels = collectDataLabels(program.statements);
 
   // Process all statements
   for (const stmt of program.statements) {
@@ -753,6 +1002,16 @@ export function generate(program: Program): string {
 
     if (stmt.kind === "callback") {
       emitCallback(s, stmt);
+      continue;
+    }
+
+    if (stmt.kind === "effect") {
+      emitEffect(s, stmt);
+      continue;
+    }
+
+    if (stmt.kind === "song") {
+      emitSong(s, stmt);
       continue;
     }
 

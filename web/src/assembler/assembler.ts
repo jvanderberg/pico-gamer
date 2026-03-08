@@ -17,6 +17,7 @@ type ParsedLine =
   | { kind: "label"; name: string }
   | { kind: "instruction"; mnemonic: string; operand: string | null }
   | { kind: "data"; bytes: number[] }
+  | { kind: "data16"; values: string[] }
   | { kind: "org"; address: number }
   | { kind: "empty" };
 
@@ -41,6 +42,13 @@ function parseLine(raw: string): ParsedLine {
       return v;
     });
     return { kind: "data", bytes };
+  }
+
+  if (line.startsWith(".data16 ") || line.startsWith(".DATA16 ")) {
+    const rest = line.slice(8).trim();
+    const values = rest.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
+    if (values.length === 0) throw new Error("Invalid .data16 directive");
+    return { kind: "data16", values };
   }
 
   // Directive: .org
@@ -112,6 +120,10 @@ export function assemble(source: string): AssemblerResult | AssemblerError {
         addr += p.bytes.length;
         break;
 
+      case "data16":
+        addr += p.values.length * 2;
+        break;
+
       case "org":
         addr = p.address;
         break;
@@ -142,6 +154,20 @@ export function assemble(source: string): AssemblerResult | AssemblerError {
         pcToLine.set(output.length, lineNum);
         for (const b of p.bytes) {
           output.push(b);
+        }
+        break;
+
+      case "data16":
+        pcToLine.set(output.length, lineNum);
+        for (const raw of p.values) {
+          let value: number;
+          try {
+            value = resolveOperand(raw, labels);
+          } catch (e) {
+            return { line: lineNum, message: (e as Error).message };
+          }
+          output.push(value & 0xff);
+          output.push((value >> 8) & 0xff);
         }
         break;
 

@@ -174,6 +174,10 @@ function advance(): Token {
   }
 
   function parseUnary(): Expr | ParseError {
+    if (peek() === TokenType.Plus) {
+      advance();
+      return parseUnary();
+    }
     if (peek() === TokenType.Minus) {
       advance();
       const operand = parseUnary();
@@ -320,6 +324,8 @@ function advance(): Token {
     if (peek() === TokenType.DO) return parseDo();
     if (peek() === TokenType.SUB) return parseSub();
     if (peek() === TokenType.CALLBACK) return parseCallback();
+    if (peek() === TokenType.EFFECT) return parseEffect();
+    if (peek() === TokenType.SONG) return parseSong();
 
     // ── Simple keywords ───────────────────────────────────────
     if (peek() === TokenType.DIM) return parseDim();
@@ -374,6 +380,23 @@ function advance(): Token {
         advance();
         if (upper === "HALT" || upper === "YIELD" || upper === "CLEAR" || upper === "RETURN") {
           return { kind: "syscall", name: upper, args: [] };
+        }
+        if (upper === "NOTE") {
+          const args = parseArgList(3, upper);
+          if (isError(args)) return args;
+          if (peek() === TokenType.Comma) {
+            advance();
+            const rate = parseExpr();
+            if (isError(rate)) return rate;
+            const comma = expect(TokenType.Comma, "','");
+            if (isError(comma)) return comma;
+            const depth = parseExpr();
+            if (isError(depth)) return depth;
+            args.push(rate, depth);
+          } else {
+            args.push({ kind: "number", value: 0 }, { kind: "number", value: 0 });
+          }
+          return { kind: "syscall", name: upper, args };
         }
         // TEXT_SM/TEXT_LG: first arg is a string expression
         const args = parseArgList(syscall.argCount, upper);
@@ -775,6 +798,139 @@ function advance(): Token {
     }
 
     return { kind: "data", name: nameTok.value, bytes };
+  }
+
+  function parseEffect(): Stmt | ParseError {
+    advance(); // skip EFFECT
+    const nameTok = expect(TokenType.Identifier, "effect name");
+    if (isError(nameTok)) return nameTok;
+
+    skipNewlines();
+    const steps: {
+      delay: Expr;
+      waveform: Expr;
+      freq: Expr | null;
+      pulseWidth: Expr | null;
+      volume: Expr | null;
+      filterCutoff: Expr | null;
+    }[] = [];
+
+    while (!(peek() === TokenType.END && tokens[pos + 1]?.type === TokenType.EFFECT)) {
+      const stepTok = expect(TokenType.STEP, "STEP");
+      if (isError(stepTok)) return stepTok;
+
+      const delay = parseExpr();
+      if (isError(delay)) return delay;
+      const comma1 = expect(TokenType.Comma, "','");
+      if (isError(comma1)) return comma1;
+
+      const waveform = parseExpr();
+      if (isError(waveform)) return waveform;
+
+      let freq: Expr | null = null;
+      let pulseWidth: Expr | null = null;
+      let volume: Expr | null = null;
+      let filterCutoff: Expr | null = null;
+
+      if (peek() === TokenType.Comma) {
+        advance();
+        const freqExpr = parseExpr();
+        if (isError(freqExpr)) return freqExpr;
+        freq = freqExpr;
+
+        const comma2 = expect(TokenType.Comma, "','");
+        if (isError(comma2)) return comma2;
+        const pwExpr = parseExpr();
+        if (isError(pwExpr)) return pwExpr;
+        pulseWidth = pwExpr;
+
+        const comma3 = expect(TokenType.Comma, "','");
+        if (isError(comma3)) return comma3;
+        const volumeExpr = parseExpr();
+        if (isError(volumeExpr)) return volumeExpr;
+        volume = volumeExpr;
+
+        const comma4 = expect(TokenType.Comma, "','");
+        if (isError(comma4)) return comma4;
+        const cutoffExpr = parseExpr();
+        if (isError(cutoffExpr)) return cutoffExpr;
+        filterCutoff = cutoffExpr;
+      }
+
+      steps.push({ delay, waveform, freq, pulseWidth, volume, filterCutoff });
+      skipNewlines();
+    }
+
+    const endTok = expect(TokenType.END, "END");
+    if (isError(endTok)) return endTok;
+    const effectTok = expect(TokenType.EFFECT, "EFFECT");
+    if (isError(effectTok)) return effectTok;
+
+    return { kind: "effect", name: nameTok.value, steps };
+  }
+
+  function parseSong(): Stmt | ParseError {
+    advance(); // skip SONG
+    const nameTok = expect(TokenType.Identifier, "song name");
+    if (isError(nameTok)) return nameTok;
+
+    const comma1 = expect(TokenType.Comma, "','");
+    if (isError(comma1)) return comma1;
+    const bpm = parseExpr();
+    if (isError(bpm)) return bpm;
+
+    const comma2 = expect(TokenType.Comma, "','");
+    if (isError(comma2)) return comma2;
+    const loop = parseExpr();
+    if (isError(loop)) return loop;
+
+    skipNewlines();
+
+    const tracks: {
+      voice: Expr;
+      effect: Expr;
+      vibratoRate: Expr;
+      vibratoDepth: Expr;
+      pattern: Expr;
+    }[] = [];
+
+    while (!(peek() === TokenType.END && tokens[pos + 1]?.type === TokenType.SONG)) {
+      const trackTok = expect(TokenType.TRACK, "TRACK");
+      if (isError(trackTok)) return trackTok;
+
+      const voice = parseExpr();
+      if (isError(voice)) return voice;
+      const comma3 = expect(TokenType.Comma, "','");
+      if (isError(comma3)) return comma3;
+
+      const effect = parseExpr();
+      if (isError(effect)) return effect;
+      const comma4 = expect(TokenType.Comma, "','");
+      if (isError(comma4)) return comma4;
+
+      const vibratoRate = parseExpr();
+      if (isError(vibratoRate)) return vibratoRate;
+      const comma5 = expect(TokenType.Comma, "','");
+      if (isError(comma5)) return comma5;
+
+      const vibratoDepth = parseExpr();
+      if (isError(vibratoDepth)) return vibratoDepth;
+      const comma6 = expect(TokenType.Comma, "','");
+      if (isError(comma6)) return comma6;
+
+      const pattern = parseExpr();
+      if (isError(pattern)) return pattern;
+
+      tracks.push({ voice, effect, vibratoRate, vibratoDepth, pattern });
+      skipNewlines();
+    }
+
+    const endTok = expect(TokenType.END, "END");
+    if (isError(endTok)) return endTok;
+    const songTok = expect(TokenType.SONG, "SONG");
+    if (isError(songTok)) return songTok;
+
+    return { kind: "song", name: nameTok.value, bpm, loop, tracks };
   }
 
   // ── Helpers ─────────────────────────────────────────────────

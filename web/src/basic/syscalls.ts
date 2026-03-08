@@ -44,10 +44,15 @@ export const SYSCALL_STMTS: Record<string, SyscallDef> = {
   VOICE:      { id: Sys.VOICE,    argCount: 4,  returns: false },
   ENVELOPE:   { id: Sys.ENVELOPE, argCount: 5,  returns: false },
   NOTEOFF:    { id: Sys.NOTE_OFF, argCount: 1,  returns: false },
-  FILTER:     { id: Sys.FILTER,   argCount: 4,  returns: false },
+  FILTER:     { id: Sys.FILTER,   argCount: 3,  returns: false },
+  VFILTER:    { id: Sys.VFILTER,  argCount: 4,  returns: false },
+  VDRIVE:     { id: Sys.VDRIVE,   argCount: 2,  returns: false },
   VOLUME:     { id: Sys.VOLUME,   argCount: 1,  returns: false },
   TONE:       { id: Sys.TONE,     argCount: 3,  returns: false },
   SFX:        { id: Sys.SFX,      argCount: 2,  returns: false },
+  NOTE:       { id: Sys.NOTE,     argCount: 3,  returns: false },
+  MPLAY:      { id: Sys.MPLAY,    argCount: 1,  returns: false },
+  MSTOP:      { id: Sys.MSTOP,    argCount: 0,  returns: false },
   HALT:       { id: -1,            argCount: 0,  returns: false }, // special: emits HALT opcode
 };
 

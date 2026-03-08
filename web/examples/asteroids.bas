@@ -41,10 +41,16 @@ SUB init_game()
   score = 0
   wave = 0
   was_thrust = 0
+  music_tick = 0
+  music_step = 0
+  music_next = 1
+  music_gate = 0
+  music_gate_until = 0
 
   ' Thrust sound: voice 0 = low rumble, voice 1 = high hiss
   ENVELOPE 0, 8, 0, 100, 20
   ENVELOPE 1, 5, 0, 50, 15
+  ENVELOPE 2, 18, 70, 96, 90
 
   SPRITE 0, ship_vecs, 9, 9, 60, 28, SPR_VECTOR, 0, 0, EDGE_WRAP
   SPR_GROUP 0, 1, 2
@@ -59,6 +65,88 @@ SUB init_game()
     sizes(i) = 0
   NEXT
   spawn_wave
+END SUB
+
+SUB trigger_music_note()
+  pattern = music_step MOD 12
+  variant = (wave + (score SHR 8)) MOD 3
+  mfreq = 0
+  mwave = WAVE_TRI
+  mpw = 0
+
+  IF pattern = 0 THEN
+    mfreq = 55
+  ELSEIF pattern = 1 THEN
+    mfreq = 0
+  ELSEIF pattern = 2 THEN
+    IF variant = 0 THEN
+      mfreq = 65
+    ELSEIF variant = 1 THEN
+      mfreq = 73
+    ELSE
+      mfreq = 82
+    END IF
+  ELSEIF pattern = 3 THEN
+    mfreq = 0
+  ELSEIF pattern = 4 THEN
+    IF variant = 2 THEN
+      mfreq = 49
+    ELSE
+      mfreq = 55
+    END IF
+  ELSEIF pattern = 5 THEN
+    mfreq = 0
+  ELSEIF pattern = 6 THEN
+    IF variant = 0 THEN
+      mfreq = 73
+    ELSEIF variant = 1 THEN
+      mfreq = 58
+    ELSE
+      mfreq = 65
+    END IF
+  ELSEIF pattern = 7 THEN
+    mfreq = 0
+  ELSEIF pattern = 8 THEN
+    mfreq = 55
+  ELSEIF pattern = 9 THEN
+    mfreq = 0
+  ELSEIF pattern = 10 THEN
+    IF variant = 1 THEN
+      mfreq = 87
+    ELSE
+      mfreq = 73
+    END IF
+  ELSE
+    mfreq = 0
+  END IF
+
+  IF mfreq <> 0 THEN
+    ENVELOPE 2, 18, 60, 56, 84
+    VOICE 2, mwave, mfreq, mpw
+    music_gate = 1
+    music_gate_until = music_tick + 12 + ((music_step + wave) MOD 10)
+  ELSE
+    NOTEOFF 2
+    music_gate = 0
+  END IF
+
+  music_next = music_tick + 24 + ((music_step + wave) MOD 16)
+  music_step = music_step + 1
+END SUB
+
+SUB update_music()
+  music_tick = music_tick + 1
+
+  IF music_gate = 1 THEN
+    IF music_tick >= music_gate_until THEN
+      NOTEOFF 2
+      music_gate = 0
+    END IF
+  END IF
+
+  IF music_tick >= music_next THEN
+    trigger_music_note
+  END IF
 END SUB
 
 SUB check_collisions()
@@ -209,6 +297,7 @@ DO
   ' -- Game loop -------------------------------------------------------
   DO WHILE game_state = 0
     check_collisions
+    update_music
 
     ' Check if all asteroids destroyed -> next wave
     IF ast_count = 0 THEN spawn_wave
@@ -335,6 +424,7 @@ DO
   ' -- Game over screen ------------------------------------------------
   NOTEOFF 0
   NOTEOFF 1
+  NOTEOFF 2
   FOR gs = 0 TO 31
     SPR_OFF gs
   NEXT

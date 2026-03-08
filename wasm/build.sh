@@ -7,8 +7,25 @@ VM_LIB="$ROOT_DIR/vm/lib/pico_vm"
 WASM_DIR="$SCRIPT_DIR"
 OUT_DIR="$ROOT_DIR/web/src/wasm"
 PUBLIC_DIR="$ROOT_DIR/web/public"
+CACHE_DIR="$ROOT_DIR/.cache/emscripten"
 
 mkdir -p "$OUT_DIR" "$PUBLIC_DIR"
+mkdir -p "$CACHE_DIR"
+
+if ! command -v emcc >/dev/null 2>&1; then
+    if [ -f "$HOME/emsdk/emsdk_env.sh" ]; then
+        # Use the local emsdk install when the shell has not preloaded it.
+        # shellcheck disable=SC1091
+        source "$HOME/emsdk/emsdk_env.sh" >/dev/null
+    fi
+fi
+
+if ! command -v emcc >/dev/null 2>&1; then
+    echo "error: emcc not found. Install/activate emsdk or ensure ~/emsdk/emsdk_env.sh exists." >&2
+    exit 1
+fi
+
+export EM_CACHE="$CACHE_DIR"
 
 SOURCES=(
     "$VM_LIB/vm.cpp"

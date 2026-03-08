@@ -1,5 +1,11 @@
 import { loadWasmVM, type WasmVM } from "../wasm/wasm-vm.ts";
-import { createAudioManager, type AudioManager } from "../audio/audio-manager.ts";
+import {
+  createAudioManager,
+  type AudioManager,
+  type EffectPayload,
+  type EffectStepPayload,
+  type SongPayload,
+} from "../audio/audio-manager.ts";
 import {
   createInput,
   bindInput,
@@ -70,6 +76,11 @@ export const INPUT_NAME_TO_BIT: Record<string, number> = {
 
 const TARGET_FPS = 60;
 const FRAME_DT = 1 / TARGET_FPS;
+const SYS_SFX = 0x36;
+const SYS_NOTE = 0x38;
+const SYS_MPLAY = 0x3a;
+const BUILTIN_SFX_COUNT = 16;
+const SONG_REST_PITCH = 0xff;
 
 function buildStackText(vm: WasmVM): string {
   const sp = vm.getSP();
@@ -208,6 +219,68 @@ export async function createEngine(
     renderToCanvas(vm.getFramebuffer(), canvasCtx, scale);
   }
 
+  function midiToHz(note: number): number {
+    return Math.round(440 * Math.pow(2, (note - 69) / 12));
+  }
+
+  function readEffectPayload(addr: number, mode: "absolute" | "relative", pitch = 0): EffectPayload {
+    const count = vm.readMem(addr);
+    const steps: EffectStepPayload[] = [];
+    for (let i = 0; i < count; i++) {
+      const stepBase = (addr + 1 + i * 8) & 0xffff;
+      const delayMs = vm.readMem16(stepBase);
+      const waveform = vm.readMem((stepBase + 2) & 0xffff);
+      const rawFreq = vm.readMem16((stepBase + 3) & 0xffff);
+      const freqValue = rawFreq & 0x8000 ? rawFreq - 0x10000 : rawFreq;
+      const pulseWidth = vm.readMem((stepBase + 5) & 0xffff);
+      const volume = vm.readMem((stepBase + 6) & 0xffff);
+      const filterCutoff = vm.readMem((stepBase + 7) & 0xffff);
+      steps.push({ delayMs, waveform, freqValue, pulseWidth, volume, filterCutoff });
+    }
+    return {
+      mode,
+      basePitch: mode === "relative" ? (pitch <= 127 ? midiToHz(pitch) : pitch) : 0,
+      vibratoRate64: 0,
+      vibratoDepth: 0,
+      steps,
+    };
+  }
+
+  function readSongPayload(addr: number): SongPayload {
+    const trackCount = vm.readMem(addr & 0xffff);
+    const bpm = vm.readMem((addr + 1) & 0xffff);
+    const loop = vm.readMem((addr + 2) & 0xffff) !== 0;
+    const tracks = [];
+    let trackBase = (addr + 3) & 0xffff;
+
+    for (let i = 0; i < trackCount; i++) {
+      const voice = vm.readMem(trackBase);
+      const effectAddr = vm.readMem16((trackBase + 1) & 0xffff);
+      const vibratoRate64 = vm.readMem16((trackBase + 3) & 0xffff);
+      const depthRaw = vm.readMem16((trackBase + 5) & 0xffff);
+      const vibratoDepth = depthRaw & 0x8000 ? depthRaw - 0x10000 : depthRaw;
+      const eventsAddr = vm.readMem16((trackBase + 7) & 0xffff);
+      const eventCount = vm.readMem(eventsAddr & 0xffff);
+      const events = [];
+      for (let j = 0; j < eventCount; j++) {
+        const eventBase = (eventsAddr + 1 + j * 2) & 0xffff;
+        const pitch = vm.readMem(eventBase);
+        const duration = vm.readMem((eventBase + 1) & 0xffff);
+        events.push({ pitch: pitch === SONG_REST_PITCH ? SONG_REST_PITCH : pitch, duration });
+      }
+      tracks.push({
+        voice,
+        vibratoRate64,
+        vibratoDepth,
+        effect: readEffectPayload(effectAddr, "relative", 0),
+        events,
+      });
+      trackBase = (trackBase + 9) & 0xffff;
+    }
+
+    return { bpm: Math.max(1, bpm), loop, tracks };
+  }
+
   /** Drain pending audio commands from the VM and dispatch to the AudioWorklet. */
   function drainAudioCommands(): void {
     const count = vm.audioCommandCount();
@@ -218,7 +291,18 @@ export async function createEngine(
       for (let j = 0; j < 5; j++) {
         args.push(vm.audioCommandArg(i, j));
       }
-      audio.dispatchAudioCmd(id, args);
+      let effect: EffectPayload | undefined;
+      let song: SongPayload | undefined;
+      if (id === SYS_SFX && args[0]! >= BUILTIN_SFX_COUNT) {
+        effect = readEffectPayload(args[0]!, "absolute");
+      } else if (id === SYS_NOTE) {
+        effect = readEffectPayload(args[0]!, "relative", args[2]!);
+        effect.vibratoRate64 = args[3] ?? 0;
+        effect.vibratoDepth = args[4] ?? 0;
+      } else if (id === SYS_MPLAY) {
+        song = readSongPayload(args[0]!);
+      }
+      audio.dispatchAudioCmd(id, args, effect, song);
     }
     if (count > 0) vm.audioCommandClear();
   }

@@ -8,13 +8,49 @@
 import { SFX_PRESETS } from "./sfx-presets.ts";
 import SynthProcessorUrl from "./synth-processor.ts?worker&url";
 
+export interface EffectStepPayload {
+  delayMs: number;
+  waveform: number;
+  freqValue: number;
+  pulseWidth: number;
+  volume: number;
+  filterCutoff: number;
+}
+
+export interface EffectPayload {
+  mode: "absolute" | "relative";
+  basePitch: number;
+  vibratoRate64: number;
+  vibratoDepth: number;
+  steps: EffectStepPayload[];
+}
+
+export interface SongEventPayload {
+  pitch: number;
+  duration: number;
+}
+
+export interface SongTrackPayload {
+  voice: number;
+  vibratoRate64: number;
+  vibratoDepth: number;
+  effect: EffectPayload;
+  events: SongEventPayload[];
+}
+
+export interface SongPayload {
+  bpm: number;
+  loop: boolean;
+  tracks: SongTrackPayload[];
+}
+
 export interface AudioManager {
   /** Ensure AudioContext is created and resumed (call on user gesture). */
   resume(): Promise<void>;
   /** Suspend audio (on stop). */
   suspend(): void;
   /** Dispatch an audio command from the VM to the worklet. */
-  dispatchAudioCmd(syscallId: number, args: number[]): void;
+  dispatchAudioCmd(syscallId: number, args: number[], effect?: EffectPayload, song?: SongPayload): void;
   /** Tear down AudioContext. */
   cleanup(): void;
 }
@@ -24,7 +60,7 @@ export function createAudioManager(): AudioManager {
   let node: AudioWorkletNode | null = null;
   let ready = false;
   let initPromise: Promise<void> | null = null;
-  let pendingCmds: { type: number; args: number[] }[] = [];
+  let pendingCmds: { type: number; args: number[]; effect?: EffectPayload; song?: SongPayload }[] = [];
   let gestureCleanup: (() => void) | null = null;
 
   function flushPending(): void {
@@ -100,11 +136,11 @@ export function createAudioManager(): AudioManager {
       ctx?.suspend();
     },
 
-    dispatchAudioCmd(syscallId: number, args: number[]) {
+    dispatchAudioCmd(syscallId: number, args: number[], effect?: EffectPayload, song?: SongPayload) {
       if (node) {
-        node.port.postMessage({ type: syscallId, args });
+        node.port.postMessage({ type: syscallId, args, effect, song });
       } else {
-        pendingCmds.push({ type: syscallId, args });
+        pendingCmds.push({ type: syscallId, args, effect, song });
       }
     },
 

@@ -48,6 +48,9 @@ export const enum TokenType {
   DIM,
   CONST,
   DATA,
+  EFFECT,
+  SONG,
+  TRACK,
   CALLBACK,
   REM,
 
@@ -93,6 +96,9 @@ export const KEYWORDS: Record<string, TokenType> = {
   DIM: TokenType.DIM,
   CONST: TokenType.CONST,
   DATA: TokenType.DATA,
+  EFFECT: TokenType.EFFECT,
+  SONG: TokenType.SONG,
+  TRACK: TokenType.TRACK,
   CALLBACK: TokenType.CALLBACK,
   REM: TokenType.REM,
 };

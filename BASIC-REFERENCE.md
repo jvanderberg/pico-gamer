@@ -1385,3 +1385,120 @@ DO
   YIELD
 LOOP
 ```
+
+## 19. Audio
+
+Pico-Gamer exposes a 6-voice synth on both web and device. The current audio model has:
+
+- direct voice control
+- custom `EFFECT` definitions
+- `NOTE` for pitched playback
+- `SFX` for sound effects
+- per-voice filters and drive
+- one master filter on the final mix
+
+For implementation details and the effect byte layout, see [AUDIO-DESIGN.md](AUDIO-DESIGN.md).
+
+### 19.1 Direct Audio Commands
+
+```basic
+VOICE voice, waveform, freq_hz, pulse_width
+ENVELOPE voice, attack, decay, sustain, release
+NOTEOFF voice
+VFILTER voice, cutoff, resonance, mode
+VDRIVE voice, amount
+FILTER cutoff, resonance, mode
+VOLUME level
+TONE voice, freq_hz, duration_ms
+```
+
+Key points:
+
+- voices are `0..5`
+- waveforms are `WAVE_PULSE`, `WAVE_SAW`, `WAVE_TRI`, `WAVE_NOISE`, or `OFF`
+- `FILTER` is the master filter
+- `VFILTER` is the voice-local filter
+- `VDRIVE` adds per-voice saturation
+
+Available filter modes:
+
+- `FILTER_LP`
+- `FILTER_BP`
+- `FILTER_HP`
+- `FILTER_NOTCH`
+- `FILTER_COMB`
+
+### 19.2 EFFECT / STEP
+
+Custom effects are defined in BASIC and compiled into the game image:
+
+```basic
+EFFECT lead
+  STEP 0,   WAVE_PULSE, 0, 92, 255, 0
+  STEP 20,  WAVE_PULSE, 0, 92, 200, 0
+  STEP 70,  WAVE_PULSE, 0, 92, 176, 0
+  STEP 170, OFF
+END EFFECT
+```
+
+Current `STEP` forms:
+
+```basic
+STEP delay_ms, waveform, freq_or_cents, pulse_width, volume, filter_cutoff
+STEP delay_ms, OFF
+```
+
+Meaning:
+
+- for `SFX`, `freq_or_cents` is an absolute frequency in Hz
+- for `NOTE`, `freq_or_cents` is a signed cents offset from the played pitch
+- `pulse_width = 255` means keep the current pulse width
+- `volume = 255` means keep the current volume
+- `filter_cutoff = 0` means do not change the voice-local cutoff
+
+### 19.3 NOTE
+
+`NOTE` plays a custom effect as an instrument:
+
+```basic
+NOTE lead, 1, C4
+NOTE lead, 1, C4, 320, 8
+```
+
+Arguments:
+
+- `effect`
+- `voice`
+- `pitch`
+- optional vibrato rate in `1/64 Hz`
+- optional vibrato depth in cents
+
+Built-in note constants such as `C4`, `DS4`, `GS1`, and `A2` are available as BASIC constants.
+
+### 19.4 SFX
+
+`SFX` plays either a built-in preset or a custom `EFFECT` in absolute-pitch mode:
+
+```basic
+SFX SFX_COIN, 3
+SFX laser, 3
+```
+
+Built-in preset constants:
+
+- `SFX_LASER`
+- `SFX_EXPLODE`
+- `SFX_PICKUP`
+- `SFX_JUMP`
+- `SFX_HIT`
+- `SFX_BOUNCE`
+- `SFX_POWERUP`
+- `SFX_DEATH`
+- `SFX_COIN`
+- `SFX_BEEP`
+- `SFX_THUD`
+- `SFX_ZAP`
+- `SFX_ALARM`
+- `SFX_CLICK`
+- `SFX_WHOOSH`
+- `SFX_BLIP`

@@ -11,7 +11,7 @@ A handheld gaming console built from commodity through-hole modules around the R
 | CPU | Raspberry Pi Pico | RP2040, 125 MHz dual-core Cortex-M0+, socketed |
 | Display | SH1106 1.3" OLED | 128x64 monochrome, I2C 1 MHz, with rotary encoder |
 | Joystick | KY-023 | 2 ADC axes + digital click |
-| Audio | Piezo buzzer (PWM) | Optional: PAM8403 amp + 8 ohm speaker |
+| Audio | MAX98357A-style I2S amp | Mono speaker output via `GPIO16/17/18` |
 | Storage | On-board 2 MB flash | 256 KB firmware + 1.75 MB FAT12 game storage |
 | Power | USB or LiPo | Optional: TP4056 charger module |
 
@@ -19,9 +19,7 @@ Games load via USB mass storage -- plug in, drag a `.game` file onto the drive, 
 
 ## Architecture
 
-**Core 0** runs the VM interpreter (or native game), SH1106 display driver, sprite/collision engine, input polling, and TinyUSB mass storage.
-
-**Core 1** runs a SID-style 3-voice synthesizer at 22 kHz with ADSR envelopes, waveform generators, and a state-variable filter.
+The current runtime includes a shared 6-voice synth on both web and device. On hardware, `firmware/vm-runner` outputs audio over I2S to a MAX98357A-style amp; on the web, the same command model feeds an `AudioWorklet`.
 
 ### Two tiers of game support
 
@@ -120,4 +118,5 @@ web/
 
 - [VM-SPEC.md](VM-SPEC.md) -- VM architecture, opcodes, memory model, syscall interface
 - [BASIC-REFERENCE.md](BASIC-REFERENCE.md) -- BASIC language reference and API
-- [pico-console-project-summary.md](pico-console-project-summary.md) -- Full hardware and software design document
+- [AUDIO-DESIGN.md](AUDIO-DESIGN.md) -- Current audio architecture and API
+- [pico-console-project-summary.md](pico-console-project-summary.md) -- Current project summary

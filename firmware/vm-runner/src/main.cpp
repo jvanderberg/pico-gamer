@@ -31,6 +31,7 @@
 #include "syscalls.h"
 #include "runtime.h"
 #include "memory.h"
+#include "audio_engine.h"
 
 // Storage
 extern "C" {
@@ -94,6 +95,23 @@ static void process_writes(void) {
     if (wq_flush) {
         rw_flush();
         wq_flush = false;
+    }
+}
+
+static void service_background(void) {
+#ifdef TINYUSB_NEED_POLLING_TASK
+    TinyUSBDevice.task();
+#endif
+    process_writes();
+    vm_audio::pump();
+}
+
+static void idle_for_us(int64_t wait_us) {
+    if (wait_us <= 0) return;
+    uint64_t deadline = time_us_64() + static_cast<uint64_t>(wait_us);
+    while ((int64_t)(deadline - time_us_64()) > 0) {
+        service_background();
+        delayMicroseconds(250);
     }
 }
 
@@ -431,6 +449,7 @@ static void draw_menu(int selected, int scroll_offset) {
 
 static void start_game(int game_idx) {
     reset_encoder_queue();
+    vm_audio::stopAll();
     resetVM(vm);
     sprites = createSpriteTable();
     walls = createWallTable();
@@ -454,6 +473,7 @@ static void start_game(int game_idx) {
 
 static void return_to_menu(void) {
     reset_encoder_queue();
+    vm_audio::stopAll();
     fat12_init();
     scan_games();
     menu_selected = 0;
@@ -525,7 +545,7 @@ static void menu_tick(void) {
     int64_t elapsed = absolute_time_diff_us(frame_start, get_absolute_time());
     int64_t target_us = 1000000 / 30;
     if (elapsed < target_us) {
-        delay((target_us - elapsed) / 1000);
+        idle_for_us(target_us - elapsed);
     }
 }
 
@@ -538,6 +558,7 @@ static void game_tick(void) {
 
     // 2. Execute one VM frame
     bool running = execGameFrame(vm, fb, game_ctx, sprites, walls);
+    vm_audio::drainCommands(game_ctx.audio, vm.memory);
 
     // 3. Convert VM framebuffer -> SH1106 format
     fb_to_sh1106(frontBuf(fb), draw_buf);
@@ -558,7 +579,7 @@ static void game_tick(void) {
     if (!running) {
         // VM halted — show final frame briefly
         dma_wait();
-        sleep_ms(1000);
+        idle_for_us(1000000);
         return_to_menu();
         return;
     }
@@ -566,7 +587,7 @@ static void game_tick(void) {
     // 7. Sleep to hit 60fps target — use delay() so yield() services USB
     int64_t elapsed = absolute_time_diff_us(frame_start, get_absolute_time());
     if (elapsed < FRAME_US) {
-        delay((FRAME_US - elapsed) / 1000);
+        idle_for_us(FRAME_US - elapsed);
     }
 }
 
@@ -579,6 +600,8 @@ void setup() {
     }
 
     Serial.begin(115200);
+
+    vm_audio::init();
 
     // USB MSC
     usb_msc.setID("PicoGmr", "PICO GAMER", "1.0");
@@ -653,15 +676,12 @@ void setup() {
 }
 
 void loop() {
-    #ifdef TINYUSB_NEED_POLLING_TASK
-    TinyUSBDevice.task();
-    #endif
-
-    // Drain USB write queue to flash (deferred from IRQ context)
-    process_writes();
+    service_background();
 
     switch (app_state) {
         case STATE_MENU: menu_tick(); break;
         case STATE_GAME: game_tick(); break;
     }
+
+    service_background();
 }

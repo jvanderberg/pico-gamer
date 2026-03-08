@@ -50,4 +50,9 @@ export const Sys = {
   VOLUME: 0x34,
   TONE: 0x35,
   SFX: 0x36,
+  VFILTER: 0x37,
+  NOTE: 0x38,
+  VDRIVE: 0x39,
+  MPLAY: 0x3a,
+  MSTOP: 0x3b,
 } as const;

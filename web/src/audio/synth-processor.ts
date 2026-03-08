@@ -18,6 +18,13 @@ const SYS_FILTER   = 0x33;
 const SYS_VOLUME   = 0x34;
 const SYS_TONE     = 0x35;
 const SYS_SFX      = 0x36;
+const SYS_VFILTER  = 0x37;
+const SYS_NOTE     = 0x38;
+const SYS_VDRIVE   = 0x39;
+const SYS_MPLAY    = 0x3a;
+const SYS_MSTOP    = 0x3b;
+const BUILTIN_SFX_COUNT = 16;
+const SONG_REST_PITCH = 0xff;
 
 // Waveform IDs
 const WAVE_OFF   = 0;
@@ -37,14 +44,60 @@ const ENV_RELEASE = 4;
 const FILTER_LP = 0;
 const FILTER_BP = 1;
 const FILTER_HP = 2;
+const FILTER_NOTCH = 3;
+const FILTER_COMB = 4;
+const COMB_MAX_DELAY = 1024;
 
-interface SfxStep {
+interface PresetStep {
   delaySamples: number;
   waveform: number;
   freqHz: number;
   pulseWidth: number;
   volume: number;
   filterCutoff: number;
+}
+
+interface EffectStep {
+  delaySamples: number;
+  waveform: number;
+  freqValue: number;
+  pulseWidth: number;
+  volume: number;
+  filterCutoff: number;
+}
+
+interface EffectPayload {
+  mode: "absolute" | "relative";
+  basePitch: number;
+  vibratoRate64: number;
+  vibratoDepth: number;
+  steps: Array<{
+    delayMs: number;
+    waveform: number;
+    freqValue: number;
+    pulseWidth: number;
+    volume: number;
+    filterCutoff: number;
+  }>;
+}
+
+interface SongEventPayload {
+  pitch: number;
+  duration: number;
+}
+
+interface SongTrackPayload {
+  voice: number;
+  vibratoRate64: number;
+  vibratoDepth: number;
+  effect: EffectPayload;
+  events: SongEventPayload[];
+}
+
+interface SongPayload {
+  bpm: number;
+  loop: boolean;
+  tracks: SongTrackPayload[];
 }
 
 interface Voice {
@@ -70,23 +123,50 @@ interface FilterState {
   cutoff: number;     // 0..1 normalized
   resonance: number;  // 0..1 (damping = 1 - resonance)
   mode: number;       // 0=LP 1=BP 2=HP
-  routing: number;    // bitmask: bits 0-5 for voices 0-5
   lp: number;
   bp: number;
+  cutoffParam: number;
+  resonanceParam: number;
+  combDelay: number;
+  combFeedback: number;
+  combIndex: number;
+  combBuffer: Float32Array;
 }
 
 interface SfxEngine {
   active: boolean;
   voice: number;
-  preset: SfxStep[];
+  steps: EffectStep[];
   stepIndex: number;
   sampleCounter: number;
+  relativePitch: boolean;
+  basePitch: number;
+  vibratoPhase: number;
+  vibratoStep: number;
+  vibratoDepth: number;
 }
 
 interface ToneTimer {
   active: boolean;
   voice: number;
   samplesLeft: number;
+}
+
+interface SongTrackState {
+  active: boolean;
+  voice: number;
+  vibratoRate64: number;
+  vibratoDepth: number;
+  effect: EffectPayload;
+  events: SongEventPayload[];
+  eventIndex: number;
+  samplesLeft: number;
+}
+
+interface SongState {
+  loop: boolean;
+  stepSamples: number;
+  tracks: SongTrackState[];
 }
 
 function createVoice(): Voice {
@@ -107,7 +187,51 @@ function createVoice(): Voice {
 }
 
 function createFilter(): FilterState {
-  return { cutoff: 1, resonance: 0, mode: FILTER_LP, routing: 0, lp: 0, bp: 0 };
+  return {
+    cutoff: 1,
+    resonance: 0,
+    mode: FILTER_LP,
+    lp: 0,
+    bp: 0,
+    cutoffParam: 255,
+    resonanceParam: 0,
+    combDelay: 1,
+    combFeedback: 0,
+    combIndex: 0,
+    combBuffer: new Float32Array(COMB_MAX_DELAY),
+  };
+}
+
+function setFilterParams(f: FilterState, cutoff: number, resonance: number, mode: number): void {
+  f.cutoffParam = cutoff & 0xff;
+  f.resonanceParam = resonance & 0xff;
+  f.cutoff = 0.01 + f.cutoffParam / 255 * 0.89;
+  f.resonance = f.resonanceParam / 255;
+  f.mode = mode;
+  f.combDelay = 1 + Math.round(((255 - f.cutoffParam) / 255) * (COMB_MAX_DELAY - 1));
+  f.combFeedback = (f.resonanceParam / 255) * 0.98;
+}
+
+function applyFilter(f: FilterState, sampleIn: number): number {
+  if (f.mode === FILTER_COMB) {
+    const readIndex = (f.combIndex + COMB_MAX_DELAY - f.combDelay) % COMB_MAX_DELAY;
+    const delayed = f.combBuffer[readIndex] ?? 0;
+    const output = (sampleIn + delayed) * 0.5;
+    f.combBuffer[f.combIndex] = Math.max(-1, Math.min(1, sampleIn + delayed * f.combFeedback));
+    f.combIndex = (f.combIndex + 1) % COMB_MAX_DELAY;
+    return output;
+  }
+  const damping = 1 - f.resonance * 0.95;
+  f.lp += f.cutoff * f.bp;
+  const hp = sampleIn - f.lp - damping * f.bp;
+  f.bp += f.cutoff * hp;
+  switch (f.mode) {
+    case FILTER_LP: return f.lp;
+    case FILTER_BP: return f.bp;
+    case FILTER_HP: return hp;
+    case FILTER_NOTCH: return f.lp + hp;
+    default: return f.lp;
+  }
 }
 
 /** Convert 0-255 ADSR param to rate per sample. Param 0 = instant. */
@@ -120,6 +244,16 @@ function paramToRate(param: number, sr: number): number {
 /** Convert Hz to phase increment (0..1 per sample). */
 function freqToStep(freqHz: number, sr: number): number {
   return freqHz / sr;
+}
+
+function midiToHz(note: number): number {
+  return Math.round(440 * Math.pow(2, (note - 69) / 12));
+}
+
+function triangleLfo(phase: number): number {
+  if (phase < 0.25) return phase * 4;
+  if (phase < 0.75) return 2 - phase * 4;
+  return phase * 4 - 4;
 }
 
 /** Generate one oscillator sample for a voice (-1..1 range). */
@@ -187,56 +321,59 @@ function advanceEnvelope(v: Voice): number {
 
 class SynthProcessor extends AudioWorkletProcessor {
   private voices: Voice[];
-  private filter: FilterState;
+  private voiceFilters: FilterState[];
+  private voiceDrive: number[];
+  private masterFilter: FilterState;
   private masterVolume: number;
   private sfx: SfxEngine[];
   private tone: ToneTimer;
-  private sfxPresets: SfxStep[][] = [];
+  private song: SongState | null;
+  private sfxPresets: PresetStep[][] = [];
 
   constructor() {
     super();
     this.voices = [createVoice(), createVoice(), createVoice(), createVoice(), createVoice(), createVoice()];
-    this.filter = createFilter();
+    this.voiceFilters = [createFilter(), createFilter(), createFilter(), createFilter(), createFilter(), createFilter()];
+    this.voiceDrive = [0, 0, 0, 0, 0, 0];
+    this.masterFilter = createFilter();
     this.masterVolume = 200 / 255; // sensible default
     this.sfx = [];
     for (let i = 0; i < 6; i++) {
-      this.sfx.push({ active: false, voice: i, preset: [], stepIndex: 0, sampleCounter: 0 });
+      this.sfx.push({
+        active: false,
+        voice: i,
+        steps: [],
+        stepIndex: 0,
+        sampleCounter: 0,
+        relativePitch: false,
+        basePitch: 0,
+        vibratoPhase: 0,
+        vibratoStep: 0,
+        vibratoDepth: 0,
+      });
     }
     this.tone = { active: false, voice: 0, samplesLeft: 0 };
+    this.song = null;
 
     this.port.onmessage = (e: MessageEvent) => {
       const msg = e.data;
       if (msg.type === "init-presets") {
-        this.sfxPresets = msg.presets as SfxStep[][];
+        this.sfxPresets = msg.presets as PresetStep[][];
         return;
       }
-      const { type, args } = msg as { type: number; args: number[] };
-      this.handleCommand(type, args);
+      const { type, args, effect, song } = msg as { type: number; args: number[]; effect?: EffectPayload; song?: SongPayload };
+      this.handleCommand(type, args, effect, song);
     };
   }
 
-  private handleCommand(type: number, args: number[]): void {
+  private handleCommand(type: number, args: number[], effect?: EffectPayload, song?: SongPayload): void {
     const sr = sampleRate;
     switch (type) {
       case SYS_VOICE: {
         const [voice, waveform, freqHz, pw] = args;
         if (voice! < 0 || voice! > 5) break;
-        const v = this.voices[voice!]!;
-        const wasOff = v.waveform === WAVE_OFF;
-        v.waveform = waveform!;
-        v.phaseStep = freqToStep(freqHz!, sr);
-        v.pulseWidth = (pw! & 0xFF) / 255;
-        if (waveform === WAVE_OFF) {
-          if (v.envState !== ENV_OFF) v.envState = ENV_RELEASE;
-        } else if (wasOff || v.envState === ENV_OFF || v.envState === ENV_RELEASE) {
-          v.phase = 0;
-          v.envState = ENV_ATTACK;
-          v.envLevel = 0;
-          if (waveform === WAVE_NOISE) {
-            v.lfsr = 0x7FFF;
-            v.lfsrOut = 0;
-          }
-        }
+        this.stopVoiceAutomation(voice!);
+        this.startVoice(voice!, waveform!, freqHz!, pw!, sr, false);
         break;
       }
       case SYS_ENVELOPE: {
@@ -252,16 +389,26 @@ class SynthProcessor extends AudioWorkletProcessor {
       case SYS_NOTE_OFF: {
         const [voice] = args;
         if (voice! < 0 || voice! > 5) break;
+        this.stopVoiceAutomation(voice!);
         const v = this.voices[voice!]!;
         if (v.envState !== ENV_OFF) v.envState = ENV_RELEASE;
         break;
       }
       case SYS_FILTER: {
-        const [cutoff, resonance, mode, routing] = args;
-        this.filter.cutoff = 0.01 + (cutoff! & 0xFF) / 255 * 0.89;
-        this.filter.resonance = (resonance! & 0xFF) / 255;
-        this.filter.mode = mode!;
-        this.filter.routing = routing!;
+        const [cutoff, resonance, mode] = args;
+        setFilterParams(this.masterFilter, cutoff!, resonance!, mode!);
+        break;
+      }
+      case SYS_VFILTER: {
+        const [voice, cutoff, resonance, mode] = args;
+        if (voice! < 0 || voice! > 5) break;
+        setFilterParams(this.voiceFilters[voice!]!, cutoff!, resonance!, mode!);
+        break;
+      }
+      case SYS_VDRIVE: {
+        const [voice, amount] = args;
+        if (voice! < 0 || voice! > 5) break;
+        this.voiceDrive[voice!] = (amount! & 0xff) / 255;
         break;
       }
       case SYS_VOLUME: {
@@ -271,6 +418,7 @@ class SynthProcessor extends AudioWorkletProcessor {
       case SYS_TONE: {
         const [voice, freqHz, durationMs] = args;
         if (voice! < 0 || voice! > 5) break;
+        this.stopVoiceAutomation(voice!);
         const v = this.voices[voice!]!;
         v.waveform = WAVE_PULSE;
         v.phase = 0;
@@ -288,22 +436,217 @@ class SynthProcessor extends AudioWorkletProcessor {
         break;
       }
       case SYS_SFX: {
-        const [effectId, voice] = args;
-        if (effectId! < 0 || effectId! >= this.sfxPresets.length) break;
+        const [effectRef, voice] = args;
         if (voice! < 0 || voice! > 5) break;
-        const preset = this.sfxPresets[effectId!]!;
-        const eng = this.sfx[voice!]!;
-        eng.active = true;
-        eng.preset = preset;
-        eng.stepIndex = 0;
-        eng.sampleCounter = 0;
-        this.applySfxStep(eng, preset[0]!);
+        if (effect) {
+          this.startEffect(voice!, effect);
+          break;
+        }
+        if (effectRef! < 0 || effectRef! >= BUILTIN_SFX_COUNT || effectRef! >= this.sfxPresets.length) break;
+        const preset = this.sfxPresets[effectRef!]!;
+        this.startBuiltinPreset(voice!, preset);
         break;
+      }
+      case SYS_NOTE: {
+        const [, voice] = args;
+        if (voice! < 0 || voice! > 5 || !effect) break;
+        this.startEffect(voice!, effect);
+        break;
+      }
+      case SYS_MPLAY:
+        if (song) this.startSong(song);
+        break;
+      case SYS_MSTOP:
+        this.stopSong();
+        break;
+    }
+  }
+
+  private stopVoiceAutomation(voice: number): void {
+    const eng = this.sfx[voice]!;
+    eng.active = false;
+    eng.steps = [];
+    eng.stepIndex = 0;
+    eng.sampleCounter = 0;
+    eng.relativePitch = false;
+    eng.basePitch = 0;
+    eng.vibratoPhase = 0;
+    eng.vibratoStep = 0;
+    eng.vibratoDepth = 0;
+    if (this.tone.active && this.tone.voice === voice) {
+      this.tone.active = false;
+      this.tone.samplesLeft = 0;
+    }
+  }
+
+  private startBuiltinPreset(voice: number, preset: PresetStep[]): void {
+    this.stopVoiceAutomation(voice);
+    const eng = this.sfx[voice]!;
+    eng.active = preset.length > 0;
+    eng.voice = voice;
+    eng.steps = preset.map((step) => ({
+      delaySamples: step.delaySamples,
+      waveform: step.waveform,
+      freqValue: step.freqHz,
+      pulseWidth: step.pulseWidth,
+      volume: step.volume,
+      filterCutoff: step.filterCutoff,
+    }));
+    eng.stepIndex = 0;
+    eng.sampleCounter = 0;
+    eng.relativePitch = false;
+    eng.basePitch = 0;
+    eng.vibratoPhase = 0;
+    eng.vibratoStep = 0;
+    eng.vibratoDepth = 0;
+    if (eng.steps.length > 0) {
+      this.applySfxStep(eng, eng.steps[0]!);
+    }
+  }
+
+  private startEffect(voice: number, effect: EffectPayload): void {
+    this.stopVoiceAutomation(voice);
+    const eng = this.sfx[voice]!;
+    eng.active = effect.steps.length > 0;
+    eng.voice = voice;
+    eng.steps = effect.steps.map((step) => ({
+      delaySamples: Math.max(0, Math.round(step.delayMs * sampleRate / 1000)),
+      waveform: step.waveform,
+      freqValue: step.freqValue,
+      pulseWidth: step.pulseWidth,
+      volume: step.volume,
+      filterCutoff: step.filterCutoff,
+    }));
+    eng.stepIndex = 0;
+    eng.sampleCounter = 0;
+    eng.relativePitch = effect.mode === "relative";
+    eng.basePitch = effect.basePitch;
+    eng.vibratoPhase = 0;
+    eng.vibratoStep = effect.vibratoRate64 / (64 * sampleRate);
+    eng.vibratoDepth = effect.vibratoDepth;
+    if (eng.steps.length > 0) {
+      this.applySfxStep(eng, eng.steps[0]!);
+    }
+  }
+
+  private stopSong(): void {
+    if (!this.song) return;
+    for (const track of this.song.tracks) {
+      this.stopVoiceAutomation(track.voice);
+      const v = this.voices[track.voice]!;
+      if (v.envState !== ENV_OFF) v.envState = ENV_RELEASE;
+    }
+    this.song = null;
+  }
+
+  private startSong(song: SongPayload): void {
+    this.stopSong();
+    const stepSamples = Math.max(1, Math.round(sampleRate * 60 / Math.max(1, song.bpm) / 4));
+    const tracks: SongTrackState[] = [];
+
+    for (const track of song.tracks) {
+      if (track.voice < 0 || track.voice > 5 || track.events.length === 0) continue;
+      tracks.push({
+        active: true,
+        voice: track.voice,
+        vibratoRate64: track.vibratoRate64,
+        vibratoDepth: track.vibratoDepth,
+        effect: track.effect,
+        events: track.events,
+        eventIndex: 0,
+        samplesLeft: 0,
+      });
+    }
+
+    if (tracks.length === 0) return;
+    this.song = { loop: song.loop, stepSamples, tracks };
+    for (const track of this.song.tracks) {
+      this.triggerSongEvent(track);
+    }
+  }
+
+  private triggerSongEvent(track: SongTrackState): void {
+    const currentSong = this.song;
+    if (!currentSong) return;
+    const event = track.events[track.eventIndex]!;
+    track.samplesLeft = Math.max(1, event.duration * currentSong.stepSamples);
+
+    if (event.pitch === SONG_REST_PITCH) {
+      this.stopVoiceAutomation(track.voice);
+      const v = this.voices[track.voice]!;
+      if (v.envState !== ENV_OFF) v.envState = ENV_RELEASE;
+      return;
+    }
+
+    this.startEffect(track.voice, {
+      ...track.effect,
+      mode: "relative",
+      basePitch: midiToHz(event.pitch),
+      vibratoRate64: track.vibratoRate64,
+      vibratoDepth: track.vibratoDepth,
+    });
+  }
+
+  private advanceSong(): void {
+    if (!this.song) return;
+    let anyActive = false;
+
+    for (const track of this.song.tracks) {
+      if (!track.active) continue;
+      anyActive = true;
+      track.samplesLeft--;
+      if (track.samplesLeft > 0) continue;
+
+      track.eventIndex++;
+      if (track.eventIndex >= track.events.length) {
+        if (this.song.loop) {
+          track.eventIndex = 0;
+        } else {
+          track.active = false;
+          this.stopVoiceAutomation(track.voice);
+          const v = this.voices[track.voice]!;
+          if (v.envState !== ENV_OFF) v.envState = ENV_RELEASE;
+          continue;
+        }
+      }
+
+      this.triggerSongEvent(track);
+    }
+
+    if (!anyActive || this.song.tracks.every((track) => !track.active)) {
+      this.song = null;
+    }
+  }
+
+  private startVoice(
+    voice: number,
+    waveform: number,
+    freqHz: number,
+    pw: number,
+    sr: number,
+    retrigger: boolean,
+  ): void {
+    const v = this.voices[voice]!;
+    const wasOff = v.waveform === WAVE_OFF;
+    v.waveform = waveform;
+    v.phaseStep = freqToStep(freqHz, sr);
+    v.pulseWidth = (pw & 0xFF) / 255;
+    if (waveform === WAVE_OFF) {
+      if (v.envState !== ENV_OFF) v.envState = ENV_RELEASE;
+      return;
+    }
+    if (retrigger || wasOff || v.envState === ENV_OFF || v.envState === ENV_RELEASE) {
+      v.phase = 0;
+      v.envState = ENV_ATTACK;
+      v.envLevel = 0;
+      if (waveform === WAVE_NOISE) {
+        v.lfsr = 0x7FFF;
+        v.lfsrOut = 0;
       }
     }
   }
 
-  private applySfxStep(eng: SfxEngine, step: SfxStep): void {
+  private applySfxStep(eng: SfxEngine, step: EffectStep): void {
     const v = this.voices[eng.voice]!;
     const wasOff = v.waveform === WAVE_OFF;
     v.waveform = step.waveform;
@@ -311,11 +654,18 @@ class SynthProcessor extends AudioWorkletProcessor {
       v.envState = ENV_OFF;
       v.envLevel = 0;
     } else {
-      v.phaseStep = freqToStep(step.freqHz, sampleRate);
-      v.pulseWidth = step.pulseWidth / 255;
-      v.envLevel = step.volume / 255;
+      const freqHz = eng.relativePitch
+        ? eng.basePitch * Math.pow(2, step.freqValue / 1200)
+        : step.freqValue;
+      v.phaseStep = freqToStep(freqHz, sampleRate);
+      if (step.pulseWidth !== 0xff) {
+        v.pulseWidth = step.pulseWidth / 255;
+      }
+      if (step.volume !== 0xff) {
+        v.envLevel = step.volume / 255;
+        v.sustain = v.envLevel;
+      }
       v.envState = ENV_SUSTAIN;
-      v.sustain = v.envLevel;
       if (wasOff) {
         v.phase = 0;
         if (step.waveform === WAVE_NOISE) {
@@ -325,8 +675,16 @@ class SynthProcessor extends AudioWorkletProcessor {
       }
     }
     if (step.filterCutoff > 0) {
-      this.filter.cutoff = 0.01 + (step.filterCutoff / 255) * 0.89;
+      const f = this.voiceFilters[eng.voice]!;
+      setFilterParams(f, step.filterCutoff, f.resonanceParam, f.mode);
     }
+  }
+
+  private applyDrive(sample: number, amount: number): number {
+    if (amount <= 0) return sample;
+    const gain = 1 + amount * 3;
+    const x = sample * gain;
+    return x / (1 + Math.abs(x) * 0.75);
   }
 
   process(_inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
@@ -334,6 +692,8 @@ class SynthProcessor extends AudioWorkletProcessor {
     const len = output.length;
 
     for (let i = 0; i < len; i++) {
+      this.advanceSong();
+
       // TONE auto note-off
       if (this.tone.active) {
         this.tone.samplesLeft--;
@@ -350,8 +710,8 @@ class SynthProcessor extends AudioWorkletProcessor {
         if (!eng.active) continue;
         eng.sampleCounter++;
         const nextIdx = eng.stepIndex + 1;
-        if (nextIdx < eng.preset.length) {
-          const nextStep = eng.preset[nextIdx]!;
+        if (nextIdx < eng.steps.length) {
+          const nextStep = eng.steps[nextIdx]!;
           if (eng.sampleCounter >= nextStep.delaySamples) {
             eng.sampleCounter = 0;
             eng.stepIndex = nextIdx;
@@ -361,11 +721,21 @@ class SynthProcessor extends AudioWorkletProcessor {
             }
           }
         }
+        if (eng.relativePitch && eng.vibratoDepth !== 0) {
+          const v = this.voices[eng.voice]!;
+          if (v.waveform !== WAVE_OFF && eng.stepIndex < eng.steps.length) {
+            const step = eng.steps[eng.stepIndex]!;
+            const cents = step.freqValue + triangleLfo(eng.vibratoPhase) * eng.vibratoDepth;
+            const freqHz = eng.basePitch * Math.pow(2, cents / 1200);
+            v.phaseStep = freqToStep(freqHz, sampleRate);
+          }
+          eng.vibratoPhase += eng.vibratoStep;
+          if (eng.vibratoPhase >= 1) eng.vibratoPhase -= 1;
+        }
       }
 
       // Mix voices
-      let filtered = 0;
-      let dry = 0;
+      let mixed = 0;
       for (let vi = 0; vi < 6; vi++) {
         const v = this.voices[vi]!;
         if (v.waveform === WAVE_OFF && v.envState === ENV_OFF) continue;
@@ -374,34 +744,10 @@ class SynthProcessor extends AudioWorkletProcessor {
         const env = advanceEnvelope(v);
         advancePhase(v);
         const sample = osc * env;
-
-        if (this.filter.routing & (1 << vi)) {
-          filtered += sample;
-        } else {
-          dry += sample;
-        }
+        const filtered = applyFilter(this.voiceFilters[vi]!, sample);
+        mixed += this.applyDrive(filtered, this.voiceDrive[vi]!);
       }
-
-      // State-variable filter
-      let mixed: number;
-      if (this.filter.routing !== 0) {
-        const f = this.filter;
-        const damping = 1 - f.resonance * 0.95;
-        f.lp += f.cutoff * f.bp;
-        const hp = filtered - f.lp - damping * f.bp;
-        f.bp += f.cutoff * hp;
-
-        let filterOut: number;
-        switch (f.mode) {
-          case FILTER_LP: filterOut = f.lp; break;
-          case FILTER_BP: filterOut = f.bp; break;
-          case FILTER_HP: filterOut = hp; break;
-          default: filterOut = f.lp;
-        }
-        mixed = filterOut + dry;
-      } else {
-        mixed = dry;
-      }
+      mixed = applyFilter(this.masterFilter, mixed);
 
       // Master volume and clamp
       mixed = mixed * this.masterVolume * 0.167;

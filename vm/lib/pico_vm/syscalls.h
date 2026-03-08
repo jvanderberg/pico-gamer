@@ -56,6 +56,11 @@ enum Sys : uint8_t {
     SYS_VOLUME     = 0x34,
     SYS_TONE       = 0x35,
     SYS_SFX        = 0x36,
+    SYS_VFILTER    = 0x37,
+    SYS_NOTE       = 0x38,
+    SYS_VDRIVE     = 0x39,
+    SYS_MPLAY      = 0x3A,
+    SYS_MSTOP      = 0x3B,
 
     SYS_PFX_SET    = 0x50,
     SYS_PFX_POS    = 0x51,
