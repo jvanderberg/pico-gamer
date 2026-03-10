@@ -33,6 +33,7 @@ export const SYSCALL_STMTS: Record<string, SyscallDef> = {
   SPR_ON_HIT: { id: Sys.SPR_ON_HIT, argCount: 2, returns: false },
   SPR_ROT:    { id: Sys.SPR_ROT,   argCount: 3,  returns: false },
   SPR_VIS:    { id: Sys.SPR_VIS,   argCount: 2,  returns: false },
+  SPR_IMG:    { id: Sys.SPR_IMG,   argCount: 2,  returns: false },
   TEXT_NUM:   { id: Sys.TEXT_NUM,   argCount: 3,  returns: false },
   WALL_SET:   { id: Sys.WALL_SET,  argCount: 5,  returns: false },
   WALL_OFF:   { id: Sys.WALL_OFF,  argCount: 1,  returns: false },
@@ -53,12 +54,23 @@ export const SYSCALL_STMTS: Record<string, SyscallDef> = {
   NOTE:       { id: Sys.NOTE,     argCount: 3,  returns: false },
   MPLAY:      { id: Sys.MPLAY,    argCount: 1,  returns: false },
   MSTOP:      { id: Sys.MSTOP,    argCount: 0,  returns: false },
+  CAM_WORLD:  { id: Sys.CAM_WORLD, argCount: 2, returns: false },
+  CAM_MODE:   { id: Sys.CAM_MODE,  argCount: 2, returns: false },
+  CAM_POS:    { id: Sys.CAM_POS,   argCount: 2, returns: false },
+  CAM_HUD:    { id: Sys.CAM_HUD,   argCount: 1, returns: false },
+  TILESET:    { id: Sys.TILESET,   argCount: 2, returns: false },
+  TILEMAP:    { id: Sys.TILEMAP,   argCount: 3, returns: false },
+  TILE_PROP:  { id: Sys.TILE_PROP, argCount: 2, returns: false },
+  TILE_SET:   { id: Sys.TILE_SET,  argCount: 3, returns: false },
+  SPR_ANIM:   { id: Sys.SPR_ANIM,  argCount: 4, returns: false },
+  SPR_DIR:    { id: Sys.SPR_DIR,   argCount: 3, returns: false },
   HALT:       { id: -1,            argCount: 0,  returns: false }, // special: emits HALT opcode
 };
 
 /** Tuple functions — syscalls that return multiple values, used as `a, b = NAME(args)` */
 export const SYSCALL_TUPLE_FUNCS: Record<string, SyscallDef & { returnCount: number }> = {
   SPR_GET: { id: Sys.SPR_GET, argCount: 1, returns: true, returnCount: 2 },
+  CAM_GET: { id: Sys.CAM_GET, argCount: 0, returns: true, returnCount: 2 },
 };
 
 /** Functions — syscalls that return a value, used in expressions as `NAME(args)` */
@@ -72,4 +84,5 @@ export const SYSCALL_FUNCS: Record<string, SyscallDef> = {
   SPR_GETROT: { id: Sys.SPR_GETROT, argCount: 1, returns: true },
   ASHR:       { id: Sys.ASHR,      argCount: 2, returns: true },
   FX_MUL:     { id: Sys.FX_MUL,    argCount: 3, returns: true },
+  TILE_GET:   { id: Sys.TILE_GET,  argCount: 2, returns: true },
 };

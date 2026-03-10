@@ -9,8 +9,9 @@ export const Sys = {
   YIELD: 0x06,
   TILESET: 0x07,
   TILEMAP: 0x08,
-  SCROLL: 0x09,
-  SPRITE_OVER: 0x0a,
+  TILE_PROP: 0x09,
+  TILE_SET: 0x0a,
+  TILE_GET: 0x0b,
   INPUT: 0x10,
   RAND: 0x20,
   TIME: 0x21,
@@ -55,4 +56,14 @@ export const Sys = {
   VDRIVE: 0x39,
   MPLAY: 0x3a,
   MSTOP: 0x3b,
+
+  SPR_IMG: 0x55,
+  SPR_ANIM: 0x56,
+  SPR_DIR: 0x57,
+
+  CAM_WORLD: 0x60,
+  CAM_MODE: 0x61,
+  CAM_POS: 0x62,
+  CAM_GET: 0x63,
+  CAM_HUD: 0x64,
 } as const;

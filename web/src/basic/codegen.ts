@@ -42,6 +42,21 @@ const BUILTIN_CONSTS: Record<string, number> = {
   SPR_FLIPY: 2,
   SPR_VECTOR: 4,
 
+  // Camera / scroll modes
+  SCROLL_NONE: 0,
+  SCROLL_FOLLOW: 1,
+  SCROLL_MANUAL: 2,
+
+  // Tile properties
+  TILE_SOLID: 1,
+  TILE_ANIM: 2,
+
+  // Direction constants
+  DIR_RIGHT: 0,
+  DIR_DOWN: 1,
+  DIR_LEFT: 2,
+  DIR_UP: 3,
+
   // Particle flags
   PFX_ALL: 255,
   PFX_2X2: 4,

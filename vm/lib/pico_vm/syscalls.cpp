@@ -16,6 +16,8 @@ SyscallContext createSyscallContext(Framebuffer* fb, SpriteTable* sprites, WallT
     ctx.sprites = sprites;
     ctx.walls = walls;
     ctx.particles = particles;
+    ctx.viewport = nullptr;
+    ctx.tilemap = nullptr;
     ctx.audio.count = 0;
     ctx.inputBits = 0;
     ctx.yieldRequested = false;
@@ -42,6 +44,17 @@ static void readString(const uint8_t* mem, uint16_t addr, char* out, int maxLen)
     out[i] = '\0';
 }
 
+// Helper: get camera offset for drawing syscalls (respects hudMode)
+static void getCamOffset(const SyscallContext& ctx, int& cx, int& cy) {
+    if (ctx.viewport && !ctx.viewport->hudMode) {
+        cx = fpToPixel(ctx.viewport->cam_x_fp);
+        cy = fpToPixel(ctx.viewport->cam_y_fp);
+    } else {
+        cx = 0;
+        cy = 0;
+    }
+}
+
 void handleSyscall(uint8_t id, VMState& vm, void* ctxPtr) {
     SyscallContext& ctx = *(SyscallContext*)ctxPtr;
 
@@ -54,7 +67,8 @@ void handleSyscall(uint8_t id, VMState& vm, void* ctxPtr) {
             uint16_t color = pop(vm);
             uint16_t y = pop(vm);
             uint16_t x = pop(vm);
-            setPixel(*ctx.fb, (int)x, (int)y, (int)color);
+            int cx, cy; getCamOffset(ctx, cx, cy);
+            setPixel(*ctx.fb, (int)x - cx, (int)y - cy, (int)color);
             break;
         }
 
@@ -63,7 +77,8 @@ void handleSyscall(uint8_t id, VMState& vm, void* ctxPtr) {
             uint16_t y1 = pop(vm);
             uint16_t x0 = pop(vm);
             uint16_t y0 = pop(vm);
-            drawLine(*ctx.fb, (int)x0, (int)y0, (int)x1, (int)y1);
+            int cx, cy; getCamOffset(ctx, cx, cy);
+            drawLine(*ctx.fb, (int)x0 - cx, (int)y0 - cy, (int)x1 - cx, (int)y1 - cy);
             break;
         }
 
@@ -72,7 +87,8 @@ void handleSyscall(uint8_t id, VMState& vm, void* ctxPtr) {
             uint16_t w = pop(vm);
             uint16_t y = pop(vm);
             uint16_t x = pop(vm);
-            drawRect(*ctx.fb, (int)x, (int)y, (int)w, (int)h);
+            int cx, cy; getCamOffset(ctx, cx, cy);
+            drawRect(*ctx.fb, (int)x - cx, (int)y - cy, (int)w, (int)h);
             break;
         }
 
@@ -83,7 +99,8 @@ void handleSyscall(uint8_t id, VMState& vm, void* ctxPtr) {
             uint16_t height = pop(vm);
             uint16_t width = pop(vm);
             uint16_t addr = pop(vm);
-            drawSprite(*ctx.fb, vm.memory + addr, (int)x, (int)y, (uint8_t)flags, (int)width, (int)height);
+            int cx, cy; getCamOffset(ctx, cx, cy);
+            drawSprite(*ctx.fb, vm.memory + addr, (int)x - cx, (int)y - cy, (uint8_t)flags, (int)width, (int)height);
             break;
         }
 
@@ -93,7 +110,8 @@ void handleSyscall(uint8_t id, VMState& vm, void* ctxPtr) {
             uint16_t y = pop(vm);
             uint16_t x = pop(vm);
             uint16_t srcAddr = pop(vm);
-            blit(*ctx.fb, vm.memory + srcAddr, (int)x, (int)y, (int)w, (int)h);
+            int cx, cy; getCamOffset(ctx, cx, cy);
+            blit(*ctx.fb, vm.memory + srcAddr, (int)x - cx, (int)y - cy, (int)w, (int)h);
             break;
         }
 
@@ -101,12 +119,65 @@ void handleSyscall(uint8_t id, VMState& vm, void* ctxPtr) {
             ctx.yieldRequested = true;
             break;
 
-        case SYS_TILESET:
-        case SYS_TILEMAP:
-        case SYS_SCROLL:
-        case SYS_SPRITE_OVER:
-            pop(vm);
+        case SYS_TILESET: {
+            uint16_t count = pop(vm);
+            uint16_t addr = pop(vm);
+            if (ctx.tilemap) {
+                ctx.tilemap->tilesetAddr = addr;
+                ctx.tilemap->tileCount = (uint8_t)count;
+            }
             break;
+        }
+
+        case SYS_TILEMAP: {
+            uint16_t h = pop(vm);
+            uint16_t w = pop(vm);
+            uint16_t addr = pop(vm);
+            if (ctx.tilemap) {
+                ctx.tilemap->mapAddr = addr;
+                ctx.tilemap->mapW = (uint8_t)w;
+                ctx.tilemap->mapH = (uint8_t)h;
+                ctx.tilemap->active = true;
+                // Also set viewport world size
+                if (ctx.viewport) {
+                    ctx.viewport->world_w = (int16_t)(w * TILE_SIZE);
+                    ctx.viewport->world_h = (int16_t)(h * TILE_SIZE);
+                }
+            }
+            break;
+        }
+
+        case SYS_TILE_PROP: {
+            uint16_t flags = pop(vm);
+            uint16_t tileIdx = pop(vm);
+            if (ctx.tilemap && tileIdx < MAX_TILE_TYPES) {
+                ctx.tilemap->props[tileIdx] = (uint8_t)flags;
+            }
+            break;
+        }
+
+        case SYS_TILE_SET: {
+            uint16_t tileIdx = pop(vm);
+            uint16_t row = pop(vm);
+            uint16_t col = pop(vm);
+            if (ctx.tilemap && ctx.tilemap->active &&
+                col < ctx.tilemap->mapW && row < ctx.tilemap->mapH) {
+                vm.memory[ctx.tilemap->mapAddr + row * ctx.tilemap->mapW + col] = (uint8_t)tileIdx;
+            }
+            break;
+        }
+
+        case SYS_TILE_GET: {
+            uint16_t row = pop(vm);
+            uint16_t col = pop(vm);
+            if (ctx.tilemap && ctx.tilemap->active &&
+                col < ctx.tilemap->mapW && row < ctx.tilemap->mapH) {
+                push(vm, vm.memory[ctx.tilemap->mapAddr + row * ctx.tilemap->mapW + col]);
+            } else {
+                push(vm, 0);
+            }
+            break;
+        }
 
         case SYS_INPUT:
             push(vm, ctx.inputBits);
@@ -138,7 +209,8 @@ void handleSyscall(uint8_t id, VMState& vm, void* ctxPtr) {
             uint16_t strAddr = pop(vm);
             char str[256];
             readString(vm.memory, strAddr, str, sizeof(str));
-            drawText(*ctx.fb, str, (int)x, (int)y, FONT_SM, 3, 5, 4);
+            int cx, cy; getCamOffset(ctx, cx, cy);
+            drawText(*ctx.fb, str, (int)x - cx, (int)y - cy, FONT_SM, 3, 5, 4);
             break;
         }
 
@@ -148,7 +220,8 @@ void handleSyscall(uint8_t id, VMState& vm, void* ctxPtr) {
             uint16_t strAddr = pop(vm);
             char str[256];
             readString(vm.memory, strAddr, str, sizeof(str));
-            drawText(*ctx.fb, str, (int)x, (int)y, FONT_LG, 5, 7, 6);
+            int cx, cy; getCamOffset(ctx, cx, cy);
+            drawText(*ctx.fb, str, (int)x - cx, (int)y - cy, FONT_LG, 5, 7, 6);
             break;
         }
 
@@ -158,7 +231,8 @@ void handleSyscall(uint8_t id, VMState& vm, void* ctxPtr) {
             uint16_t value = pop(vm);
             char str[16];
             snprintf(str, sizeof(str), "%u", value);
-            drawText(*ctx.fb, str, (int)x, (int)y, FONT_SM, 3, 5, 4);
+            int cx, cy; getCamOffset(ctx, cx, cy);
+            drawText(*ctx.fb, str, (int)x - cx, (int)y - cy, FONT_SM, 3, 5, 4);
             break;
         }
 
@@ -364,6 +438,48 @@ void handleSyscall(uint8_t id, VMState& vm, void* ctxPtr) {
             uint16_t slot = pop(vm);
             if (slot < MAX_SPRITES) {
                 ctx.sprites->sprites[slot].visible = (visible != 0);
+            }
+            break;
+        }
+
+        case SYS_SPR_IMG: {
+            uint16_t addr = pop(vm);
+            uint16_t slot = pop(vm);
+            if (slot < MAX_SPRITES) {
+                ctx.sprites->sprites[slot].addr = addr;
+            }
+            break;
+        }
+
+        case SYS_SPR_ANIM: {
+            uint16_t rate = pop(vm);
+            uint16_t count = pop(vm);
+            uint16_t addr = pop(vm);
+            uint16_t slot = pop(vm);
+            if (slot < MAX_SPRITES) {
+                Sprite& spr = ctx.sprites->sprites[slot];
+                spr.animAddr = addr;
+                spr.animFrames = (uint8_t)count;
+                spr.animRate = (uint8_t)rate;
+                spr.animTick = 0;
+                spr.animCurrent = 0;
+                spr.addr = addr; // start at first frame
+            }
+            break;
+        }
+
+        case SYS_SPR_DIR: {
+            int16_t speed = toSigned(pop(vm));
+            uint16_t dir = pop(vm);
+            uint16_t slot = pop(vm);
+            if (slot < MAX_SPRITES) {
+                Sprite& spr = ctx.sprites->sprites[slot];
+                switch (dir & 3) {
+                    case 0: spr.vx = speed;  spr.vy = 0;      break; // right
+                    case 1: spr.vx = 0;      spr.vy = speed;  break; // down
+                    case 2: spr.vx = -speed; spr.vy = 0;      break; // left
+                    case 3: spr.vx = 0;      spr.vy = -speed; break; // up
+                }
             }
             break;
         }
@@ -595,6 +711,57 @@ void handleSyscall(uint8_t id, VMState& vm, void* ctxPtr) {
                 AudioCmd& cmd = ctx.audio.cmds[ctx.audio.count++];
                 cmd.id = SYS_MSTOP;
                 cmd.argCount = 0;
+            }
+            break;
+        }
+
+        // --- Camera / Viewport ---
+
+        case SYS_CAM_WORLD: {
+            uint16_t h = pop(vm);
+            uint16_t w = pop(vm);
+            if (ctx.viewport) {
+                ctx.viewport->world_w = (int16_t)w;
+                ctx.viewport->world_h = (int16_t)h;
+            }
+            break;
+        }
+
+        case SYS_CAM_MODE: {
+            uint16_t slot = pop(vm);
+            uint16_t mode = pop(vm);
+            if (ctx.viewport) {
+                ctx.viewport->mode = (uint8_t)mode;
+                ctx.viewport->followSlot = (uint8_t)slot;
+            }
+            break;
+        }
+
+        case SYS_CAM_POS: {
+            uint16_t y = pop(vm);
+            uint16_t x = pop(vm);
+            if (ctx.viewport) {
+                ctx.viewport->cam_x_fp = pixelToFp((int16_t)x);
+                ctx.viewport->cam_y_fp = pixelToFp((int16_t)y);
+            }
+            break;
+        }
+
+        case SYS_CAM_GET: {
+            if (ctx.viewport) {
+                push(vm, (uint16_t)(fpToPixel(ctx.viewport->cam_x_fp) & 0xFFFF));
+                push(vm, (uint16_t)(fpToPixel(ctx.viewport->cam_y_fp) & 0xFFFF));
+            } else {
+                push(vm, 0);
+                push(vm, 0);
+            }
+            break;
+        }
+
+        case SYS_CAM_HUD: {
+            uint16_t flag = pop(vm);
+            if (ctx.viewport) {
+                ctx.viewport->hudMode = (flag != 0);
             }
             break;
         }

@@ -5,6 +5,22 @@
 #include <cstring>
 #include <cstdlib>
 
+Viewport createViewport() {
+    Viewport vp;
+    resetViewport(vp);
+    return vp;
+}
+
+void resetViewport(Viewport& vp) {
+    vp.world_w = WORLD_DEFAULT_W;
+    vp.world_h = WORLD_DEFAULT_H;
+    vp.cam_x_fp = 0;
+    vp.cam_y_fp = 0;
+    vp.mode = 0;
+    vp.followSlot = 0;
+    vp.hudMode = false;
+}
+
 SpriteTable createSpriteTable() {
     SpriteTable table;
     resetSpriteTable(table);
@@ -34,6 +50,11 @@ void resetSpriteTable(SpriteTable& table) {
         s.visible = true;
         s.angle_fp = 0;
         s.rotSpeed = 0;
+        s.animAddr = 0;
+        s.animFrames = 0;
+        s.animRate = 0;
+        s.animTick = 0;
+        s.animCurrent = 0;
     }
 }
 
@@ -100,22 +121,20 @@ static void applyCollisionMode(int mode, Sprite& spr,
 
 // --- Edge behavior ---
 
-static void applyEdgeBehavior(Sprite& spr) {
-    int32_t sw = SCREEN_W << FP_SHIFT;
-    int32_t sh = SCREEN_H << FP_SHIFT;
+static void applyEdgeBehavior(Sprite& spr, int16_t world_w, int16_t world_h) {
+    int32_t sw = (int32_t)world_w << FP_SHIFT;
+    int32_t sh = (int32_t)world_h << FP_SHIFT;
 
     switch (spr.edge) {
         case 1: { // wrap
-            int32_t wfp = sw;
-            int32_t hfp = sh;
-            spr.x_fp = ((spr.x_fp % wfp) + wfp) % wfp;
-            spr.y_fp = ((spr.y_fp % hfp) + hfp) % hfp;
+            spr.x_fp = ((spr.x_fp % sw) + sw) % sw;
+            spr.y_fp = ((spr.y_fp % sh) + sh) % sh;
             break;
         }
 
         case 2: { // bounce
-            int32_t maxX = (SCREEN_W - spr.width) << FP_SHIFT;
-            int32_t maxY = (SCREEN_H - spr.height) << FP_SHIFT;
+            int32_t maxX = ((int32_t)(world_w - spr.width)) << FP_SHIFT;
+            int32_t maxY = ((int32_t)(world_h - spr.height)) << FP_SHIFT;
             if (spr.x_fp <= 0) {
                 spr.x_fp = 0;
                 spr.vx = (spr.vx < 0) ? -spr.vx : spr.vx;
@@ -137,7 +156,7 @@ static void applyEdgeBehavior(Sprite& spr) {
             break;
         }
 
-        case 3: { // destroy — when fully off-screen
+        case 3: { // destroy — when fully off world
             int32_t nw = -((int32_t)spr.width << FP_SHIFT);
             int32_t nh = -((int32_t)spr.height << FP_SHIFT);
             if (spr.x_fp <= nw || spr.x_fp >= sw ||
@@ -149,8 +168,8 @@ static void applyEdgeBehavior(Sprite& spr) {
         }
 
         case 4: { // stop
-            int32_t maxX = (SCREEN_W - spr.width) << FP_SHIFT;
-            int32_t maxY = (SCREEN_H - spr.height) << FP_SHIFT;
+            int32_t maxX = ((int32_t)(world_w - spr.width)) << FP_SHIFT;
+            int32_t maxY = ((int32_t)(world_h - spr.height)) << FP_SHIFT;
             if (spr.x_fp <= 0) { spr.x_fp = 0; spr.vx = 0; spr.hitFlags |= 1; }
             else if (spr.x_fp >= maxX) { spr.x_fp = maxX; spr.vx = 0; spr.hitFlags |= 1; }
             if (spr.y_fp <= 0) { spr.y_fp = 0; spr.vy = 0; spr.hitFlags |= 1; }
@@ -394,13 +413,14 @@ static bool pixelOverlap(const Sprite& a, const Sprite& b, const uint8_t* mem) {
     return false;
 }
 
-static void drawVectorSprite(Framebuffer& fb, const Sprite& spr, const uint8_t* mem) {
+static void drawVectorSprite(Framebuffer& fb, const Sprite& spr, const uint8_t* mem,
+                             int16_t cam_x = 0, int16_t cam_y = 0) {
     uint8_t n = mem[spr.addr];
     int angle = (int)((spr.angle_fp >> FP_SHIFT) & 0xFF);
     int cosA = cos256(angle);
     int sinA = sin256(angle);
-    int cx = (int)(spr.x_fp >> FP_SHIFT) + (spr.width >> 1);
-    int cy = (int)(spr.y_fp >> FP_SHIFT) + (spr.height >> 1);
+    int cx = (int)(spr.x_fp >> FP_SHIFT) + (spr.width >> 1) - cam_x;
+    int cy = (int)(spr.y_fp >> FP_SHIFT) + (spr.height >> 1) - cam_y;
 
     for (int i = 0; i < n; i++) {
         int base = spr.addr + 1 + i * 4;
@@ -420,7 +440,8 @@ static void drawVectorSprite(Framebuffer& fb, const Sprite& spr, const uint8_t* 
 
 // --- Main update function ---
 
-void updateSprites(SpriteTable& table, WallTable& walls, int32_t scale_fp, uint8_t* mem) {
+void updateSprites(SpriteTable& table, WallTable& walls, int32_t scale_fp, uint8_t* mem,
+                   int16_t world_w, int16_t world_h) {
     // scale_fp is the time-scale factor in 24.8 fixed-point.
     // At normal speed (one frame at 60fps): scale_fp = FP_SCALE (256) = 1.0x
     // The caller (runtime) computes: scale = dt * TARGET_FPS in 24.8
@@ -541,7 +562,7 @@ void updateSprites(SpriteTable& table, WallTable& walls, int32_t scale_fp, uint8
     for (int i = 0; i < MAX_SPRITES; i++) {
         Sprite& spr = table.sprites[i];
         if (!spr.active) continue;
-        applyEdgeBehavior(spr);
+        applyEdgeBehavior(spr, world_w, world_h);
     }
 }
 
@@ -566,19 +587,176 @@ void runHitCallbacks(SpriteTable& table, VMState& vm, SyscallHandler handler, vo
     }
 }
 
-void drawSprites(const SpriteTable& table, const uint8_t* mem, Framebuffer& fb) {
+void updateViewport(Viewport& vp, const SpriteTable& table) {
+    if (vp.mode == 0) return;
+
+    if (vp.mode == 1) { // follow sprite
+        if (vp.followSlot < MAX_SPRITES && table.sprites[vp.followSlot].active) {
+            const Sprite& t = table.sprites[vp.followSlot];
+            int32_t cx = t.x_fp + (((int32_t)t.width << FP_SHIFT) >> 1);
+            int32_t cy = t.y_fp + (((int32_t)t.height << FP_SHIFT) >> 1);
+            vp.cam_x_fp = cx - ((SCREEN_W / 2) << FP_SHIFT);
+            vp.cam_y_fp = cy - ((SCREEN_H / 2) << FP_SHIFT);
+        }
+    }
+    // mode == 2 (manual): cam set by syscall
+
+    // Clamp to world bounds
+    int32_t max_x = ((int32_t)(vp.world_w - SCREEN_W)) << FP_SHIFT;
+    int32_t max_y = ((int32_t)(vp.world_h - SCREEN_H)) << FP_SHIFT;
+    if (max_x <= 0) { vp.cam_x_fp = 0; }
+    else { if (vp.cam_x_fp < 0) vp.cam_x_fp = 0; if (vp.cam_x_fp > max_x) vp.cam_x_fp = max_x; }
+    if (max_y <= 0) { vp.cam_y_fp = 0; }
+    else { if (vp.cam_y_fp < 0) vp.cam_y_fp = 0; if (vp.cam_y_fp > max_y) vp.cam_y_fp = max_y; }
+}
+
+// --- TileMap ---
+
+TileMap createTileMap() {
+    TileMap tm;
+    resetTileMap(tm);
+    return tm;
+}
+
+void resetTileMap(TileMap& tm) {
+    tm.tilesetAddr = 0;
+    tm.tileCount = 0;
+    tm.mapAddr = 0;
+    tm.mapW = 0;
+    tm.mapH = 0;
+    tm.active = false;
+    tm.frameCount = 0;
+    memset(tm.props, 0, sizeof(tm.props));
+}
+
+void drawTileMap(const TileMap& tm, const uint8_t* mem, Framebuffer& fb,
+                 int16_t cam_x, int16_t cam_y) {
+    if (!tm.active) return;
+
+    // Calculate visible tile range
+    int startCol = cam_x / TILE_SIZE;
+    int startRow = cam_y / TILE_SIZE;
+    int endCol = (cam_x + SCREEN_W + TILE_SIZE - 1) / TILE_SIZE;
+    int endRow = (cam_y + SCREEN_H + TILE_SIZE - 1) / TILE_SIZE;
+
+    if (startCol < 0) startCol = 0;
+    if (startRow < 0) startRow = 0;
+    if (endCol > tm.mapW) endCol = tm.mapW;
+    if (endRow > tm.mapH) endRow = tm.mapH;
+
+    bool animPhase = (tm.frameCount & 16) != 0;
+
+    for (int r = startRow; r < endRow; r++) {
+        for (int c = startCol; c < endCol; c++) {
+            uint8_t tileIdx = mem[tm.mapAddr + r * tm.mapW + c];
+            if (tileIdx == 0 || tileIdx >= tm.tileCount) continue;
+
+            // Animated tile: alternate with next tile index
+            if ((tm.props[tileIdx] & TILE_ANIM) && animPhase) {
+                uint8_t altIdx = tileIdx + 1;
+                if (altIdx < tm.tileCount) tileIdx = altIdx;
+            }
+
+            int screenX = c * TILE_SIZE - cam_x;
+            int screenY = r * TILE_SIZE - cam_y;
+            const uint8_t* tileData = mem + tm.tilesetAddr + tileIdx * TILE_BYTES;
+            blit(fb, tileData, screenX, screenY, TILE_SIZE, TILE_SIZE);
+        }
+    }
+}
+
+void resolveTileCollisions(SpriteTable& table, const TileMap& tm, const uint8_t* mem) {
+    if (!tm.active) return;
+
+    for (int i = 0; i < MAX_SPRITES; i++) {
+        Sprite& spr = table.sprites[i];
+        if (!spr.active || spr.wallMode == 0) continue;
+
+        int32_t sprW_fp = (int32_t)spr.width << FP_SHIFT;
+        int32_t sprH_fp = (int32_t)spr.height << FP_SHIFT;
+
+        // Get pixel-space bounding box
+        int16_t px = fpToPixel(spr.x_fp);
+        int16_t py = fpToPixel(spr.y_fp);
+        int16_t pr = px + spr.width - 1;
+        int16_t pb = py + spr.height - 1;
+
+        // Tile range the sprite overlaps
+        int tl = px / TILE_SIZE;
+        int tr = pr / TILE_SIZE;
+        int tt = py / TILE_SIZE;
+        int tb = pb / TILE_SIZE;
+
+        bool collided = false;
+
+        for (int r = tt; r <= tb; r++) {
+            for (int c = tl; c <= tr; c++) {
+                if (c < 0 || c >= tm.mapW || r < 0 || r >= tm.mapH) continue;
+                uint8_t tileIdx = mem[tm.mapAddr + r * tm.mapW + c];
+                if (tileIdx == 0 || tileIdx >= MAX_TILE_TYPES) continue;
+                if (!(tm.props[tileIdx] & TILE_SOLID)) continue;
+
+                // Tile AABB in fixed-point
+                int32_t tileX_fp = ((int32_t)(c * TILE_SIZE)) << FP_SHIFT;
+                int32_t tileY_fp = ((int32_t)(r * TILE_SIZE)) << FP_SHIFT;
+                int32_t tileW_fp = (int32_t)TILE_SIZE << FP_SHIFT;
+                int32_t tileH_fp = (int32_t)TILE_SIZE << FP_SHIFT;
+
+                int32_t overlapLeft   = (spr.x_fp + sprW_fp) - tileX_fp;
+                int32_t overlapRight  = (tileX_fp + tileW_fp) - spr.x_fp;
+                int32_t overlapTop    = (spr.y_fp + sprH_fp) - tileY_fp;
+                int32_t overlapBottom = (tileY_fp + tileH_fp) - spr.y_fp;
+
+                if (overlapLeft <= 0 || overlapRight <= 0 ||
+                    overlapTop <= 0 || overlapBottom <= 0) continue;
+
+                applyCollisionMode(spr.wallMode, spr,
+                                   overlapLeft, overlapRight,
+                                   overlapTop, overlapBottom);
+                spr.hitFlags |= 2;
+                collided = true;
+                if (!spr.active) break;
+            }
+            if (!spr.active) break;
+        }
+    }
+}
+
+// --- Sprite animation ---
+
+void updateSpriteAnimations(SpriteTable& table) {
+    for (int i = 0; i < MAX_SPRITES; i++) {
+        Sprite& spr = table.sprites[i];
+        if (!spr.active || spr.animFrames <= 1) continue;
+
+        spr.animTick++;
+        if (spr.animTick >= spr.animRate) {
+            spr.animTick = 0;
+            spr.animCurrent++;
+            if (spr.animCurrent >= spr.animFrames) {
+                spr.animCurrent = 0;
+            }
+            // Update the sprite's bitmap address
+            int bytesPerFrame = ((spr.width + 7) / 8) * spr.height;
+            spr.addr = spr.animAddr + spr.animCurrent * bytesPerFrame;
+        }
+    }
+}
+
+void drawSprites(const SpriteTable& table, const uint8_t* mem, Framebuffer& fb,
+                 int16_t cam_x, int16_t cam_y) {
     for (int i = 0; i < MAX_SPRITES; i++) {
         const Sprite& spr = table.sprites[i];
         if (!spr.active || !spr.visible) continue;
 
         if (spr.flags & 4) {
-            drawVectorSprite(fb, spr, mem);
+            drawVectorSprite(fb, spr, mem, cam_x, cam_y);
             continue;
         }
 
         // Use sprite data directly from memory (no copy needed)
-        int px = (int)(spr.x_fp >> FP_SHIFT);
-        int py = (int)(spr.y_fp >> FP_SHIFT);
+        int px = (int)(spr.x_fp >> FP_SHIFT) - cam_x;
+        int py = (int)(spr.y_fp >> FP_SHIFT) - cam_y;
         int angle = (int)((spr.angle_fp >> FP_SHIFT) & 0xFF);
 
         drawSpriteRotated(fb, mem + spr.addr, px, py, spr.flags, spr.width, spr.height, angle);

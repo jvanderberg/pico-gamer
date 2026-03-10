@@ -14,6 +14,8 @@ static Framebuffer    fb;
 static SpriteTable    sprites;
 static WallTable      walls;
 static ParticleTable  particles;
+static Viewport       viewport;
+static TileMap        tilemap;
 static SyscallContext ctx;
 
 extern "C" {
@@ -25,7 +27,11 @@ void vm_init() {
     sprites = createSpriteTable();
     walls = createWallTable();
     particles = createParticleTable();
+    viewport = createViewport();
+    tilemap = createTileMap();
     ctx = createSyscallContext(&fb, &sprites, &walls, &particles);
+    ctx.viewport = &viewport;
+    ctx.tilemap = &tilemap;
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -35,7 +41,11 @@ void vm_reset() {
     resetSpriteTable(sprites);
     resetWallTable(walls);
     resetParticleTable(particles);
+    resetViewport(viewport);
+    resetTileMap(tilemap);
     ctx = createSyscallContext(&fb, &sprites, &walls, &particles);
+    ctx.viewport = &viewport;
+    ctx.tilemap = &tilemap;
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -70,9 +80,20 @@ bool vm_is_yielded() {
 
 EMSCRIPTEN_KEEPALIVE
 void vm_do_sprite_update() {
-    updateSprites(sprites, walls, FP_SCALE, vm.memory);
+    updateSpriteAnimations(sprites);
+    updateSprites(sprites, walls, FP_SCALE, vm.memory, viewport.world_w, viewport.world_h);
+    if (tilemap.active) {
+        resolveTileCollisions(sprites, tilemap, vm.memory);
+        tilemap.frameCount++;
+    }
+    updateViewport(viewport, sprites);
     runHitCallbacks(sprites, vm, handleSyscall, &ctx);
-    drawSprites(sprites, vm.memory, fb);
+    int16_t cx = fpToPixel(viewport.cam_x_fp);
+    int16_t cy = fpToPixel(viewport.cam_y_fp);
+    if (tilemap.active) {
+        drawTileMap(tilemap, vm.memory, fb, cx, cy);
+    }
+    drawSprites(sprites, vm.memory, fb, cx, cy);
     swapBuffers(fb);
 }
 
