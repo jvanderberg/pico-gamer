@@ -1,4 +1,5 @@
 import asteroidsBas from "../../examples/asteroids.bas?raw";
+import invadersBas from "../../examples/invaders.bas?raw";
 import chiptuneDemoBas from "../../examples/chiptune-demo.bas?raw";
 import dancePartyBas from "../../examples/dance-party.bas?raw";
 import kesslerBas from "../../examples/kessler.bas?raw";
@@ -13,6 +14,7 @@ export interface Demo {
 }
 
 export const DEMOS: Demo[] = [
+  { name: "Invaders", source: invadersBas },
   { name: "Asteroids", source: asteroidsBas },
   { name: "Chiptune Demo", source: chiptuneDemoBas },
   { name: "Dance Party", source: dancePartyBas },
