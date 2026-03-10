@@ -372,6 +372,22 @@ Songs compile to VM memory in this layout:
     - byte `1`
       - duration
 
+## Voice Pre-emption
+
+Voices are shared between the song sequencer and direct commands (`VOICE`, `SFX`, `NOTE`, `TONE`). When a direct command takes a voice that a song track is also using, the sequencer yields:
+
+- The direct command plays immediately and marks the voice as externally occupied.
+- The song timer keeps ticking — timing stays in sync.
+- While the voice is occupied, the sequencer skips notes on that voice instead of cutting the sound short.
+- Once the external sound finishes (envelope off, no active automation), the song reclaims the voice on its next note.
+- `NOTEOFF` explicitly releases the voice back to the song.
+
+This means games can share all 6 voices between background music and sound effects without a separate mixer. For example, thrust noise on voices 0-1 interrupts pad tracks, and `SFX` on voice 5 interrupts a percussion track — but neither gets cut short, and the music stays in time.
+
+## Audio Reset
+
+When a new program is loaded or the engine is reset, a `reset` message is sent to the audio worklet. This silences all voices, clears all filters and drive, stops the active song, and resets master volume to the default. This prevents audio state from leaking between program loads.
+
 ## Music Today
 
 The intended layering is:

@@ -378,6 +378,7 @@ export async function createEngine(
       return false;
     }
     lastBytecode = result.bytecode;
+    audio.reset();
     vm.reset();
     vm.loadProgram(result.bytecode);
     render();
@@ -497,6 +498,7 @@ export async function createEngine(
         cancelAnimationFrame(animFrame);
         animFrame = null;
       }
+      audio.reset();
       vm.reset();
       if (lastBytecode) {
         vm.loadProgram(lastBytecode);
@@ -522,6 +524,7 @@ export async function createEngine(
         return demo.source;
       }
       lastBytecode = result.bytecode;
+      audio.reset();
       vm.reset();
       vm.loadProgram(result.bytecode);
       render();
@@ -535,6 +538,7 @@ export async function createEngine(
         cancelAnimationFrame(animFrame);
         animFrame = null;
       }
+      audio.reset();
       lastBytecode = null;
       currentError = null;
       emitUpdate();

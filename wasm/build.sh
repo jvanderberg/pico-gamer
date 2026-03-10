@@ -8,6 +8,8 @@ WASM_DIR="$SCRIPT_DIR"
 OUT_DIR="$ROOT_DIR/web/src/wasm"
 PUBLIC_DIR="$ROOT_DIR/web/public"
 CACHE_DIR="$ROOT_DIR/.cache/emscripten"
+SYSTEM_EMSCRIPTEN_CONFIG="/usr/share/emscripten/.emscripten"
+SYSTEM_CACHE_DIR="/usr/share/emscripten/cache"
 
 mkdir -p "$OUT_DIR" "$PUBLIC_DIR"
 mkdir -p "$CACHE_DIR"
@@ -25,7 +27,18 @@ if ! command -v emcc >/dev/null 2>&1; then
     exit 1
 fi
 
-export EM_CACHE="$CACHE_DIR"
+# Debian/Ubuntu's packaged Emscripten ships with FROZEN_CACHE enabled and a
+# prebuilt shared cache. Reusing that cache avoids build failures when this
+# script points EM_CACHE at a fresh project-local directory.
+if [ -z "${EM_CACHE:-}" ]; then
+    if [ -f "$SYSTEM_EMSCRIPTEN_CONFIG" ] &&
+       grep -Eq '^[[:space:]]*FROZEN_CACHE[[:space:]]*=[[:space:]]*True' "$SYSTEM_EMSCRIPTEN_CONFIG" &&
+       [ -d "$SYSTEM_CACHE_DIR" ]; then
+        export EM_CACHE="$SYSTEM_CACHE_DIR"
+    else
+        export EM_CACHE="$CACHE_DIR"
+    fi
+fi
 
 SOURCES=(
     "$VM_LIB/vm.cpp"
@@ -106,7 +119,7 @@ emcc "${SOURCES[@]}" \
     -s MODULARIZE=1 \
     -s EXPORT_ES6=1 \
     -s ALLOW_MEMORY_GROWTH=0 \
-    -s INITIAL_MEMORY=1048576 \
+    -s INITIAL_MEMORY=8388608 \
     -s EXPORTED_FUNCTIONS="[$EXPORTS]" \
     -s EXPORTED_RUNTIME_METHODS='["cwrap","HEAPU8"]' \
     -O2 \

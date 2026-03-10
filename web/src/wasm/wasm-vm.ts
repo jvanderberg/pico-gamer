@@ -60,17 +60,24 @@ export interface WasmVM {
 }
 
 export async function loadWasmVM(): Promise<WasmVM> {
-  const mod: PicoVMModule = await createModule({
-    locateFile: (path: string, prefix: string) => {
-      if (path.endsWith(".wasm")) {
-        // In browser, serve from public/
-        if (typeof window !== "undefined") return import.meta.env.BASE_URL + "pico-vm.wasm";
-        // In Node.js (tests), use Emscripten's resolved prefix
-        return prefix + path;
-      }
-      return prefix + path;
-    },
-  });
+  const opts: Record<string, unknown> = {};
+
+  if (typeof window !== "undefined") {
+    // Browser: serve .wasm from public/ via Vite's base URL
+    opts.locateFile = (path: string) => {
+      if (path.endsWith(".wasm")) return import.meta.env.BASE_URL + "pico-vm.wasm";
+      return path;
+    };
+  } else {
+    // Node.js (tests): read the .wasm binary from disk directly to avoid
+    // emscripten's path.normalize() mangling file:// URLs (emcc 3.1.5 bug)
+    const { readFileSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    const wasmPath = fileURLToPath(new URL("pico-vm.wasm", import.meta.url));
+    opts.wasmBinary = readFileSync(wasmPath);
+  }
+
+  const mod: PicoVMModule = await createModule(opts);
 
   const vmInit = mod.cwrap("vm_init", null, []) as () => void;
   const vmReset = mod.cwrap("vm_reset", null, []) as () => void;

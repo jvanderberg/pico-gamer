@@ -1,7 +1,7 @@
-' -- Asteroids -------------------------------------------------------
-' Ship rotates with encoder, thrusts with BTN, wraps at screen edges.
-' Fire bullets with ENC_BTN; bullets destroy asteroids.
-' Large->2 medium, medium->2 small, small->gone.
+' -- Kessler Syndrome ------------------------------------------------
+' The field starts clear. Asteroids appear periodically, faster over time.
+' Large->medium->small->tiny. Asteroid-asteroid collisions break them too.
+' Tiny asteroids (2px dots) don't break further but can still kill you.
 
 ' -- Graphics DATA ---------------------------------------------------
 ' Ship vector data (triangle outline, 3 segments in 4.4 signed fixed-point)
@@ -17,12 +17,17 @@ DATA ast_large, 5, $00,$90,$60,$E0, $60,$E0,$50,$50, $50,$50,$B0,$50, $B0,$50,$A
 DATA ast_med, 5, $00,$C0,$40,$F0, $40,$F0,$30,$30, $30,$30,$D0,$30, $D0,$30,$C0,$F0, $C0,$F0,$00,$C0
 ' Small (4 segments, ~5x5)
 DATA ast_small, 4, $00,$E0,$20,$00, $20,$00,$00,$20, $00,$20,$E0,$00, $E0,$00,$00,$E0
+' Tiny (2x2 bitmap dot)
+DATA ast_tiny, $C0, $C0
 
 ' Ship icon for lives HUD (5x5 row-aligned)
 DATA ship_icon, $20, $50, $50, $88, $F8
 
 ' -- Array for asteroid sizes (slots 5-31 = 27 entries) ---------------
+' sizes: 0=empty, 1=large, 2=medium, 3=small (terminal)
 DIM sizes(27)
+' invincibility countdown per asteroid slot (0 = vulnerable)
+DIM ast_inv(27)
 
 ' -- Background Music (all 6 voices) -----------------------------------
 EFFECT bg_bass
@@ -84,14 +89,16 @@ SUB init_game()
   next_bullet = 1
   lives = 3
   score = 0
-  wave = 0
   was_thrust = 0
+  spawn_timer = 0
+  spawn_rate = 480
+  frame_count = 0
 
   ' Thrust sound: voice 0 = low rumble, voice 1 = high hiss
   ENVELOPE 0, 8, 0, 100, 20
   ENVELOPE 1, 5, 0, 50, 15
 
-  ' Background music on all 6 voices (0-1 pads, 2 bass, 3 lead, 4 arp, 5 perc)
+  ' Background music on all 6 voices
   VFILTER 0, 80, 20, FILTER_LP
   VFILTER 1, 80, 20, FILTER_LP
   VFILTER 2, 100, 30, FILTER_LP
@@ -108,8 +115,97 @@ SUB init_game()
 
   FOR i = 0 TO 26
     sizes(i) = 0
+    ast_inv(i) = 0
   NEXT
-  spawn_wave
+
+  ' Start with one large asteroid in a corner
+  spawn_child 1, 110, 5
+END SUB
+
+SUB spawn_child(sc_size, sc_x, sc_y)
+  ' Find free slot 5-31
+  FOR fslot = 5 TO 31
+    IF sizes(fslot - 5) = 0 THEN
+      IF sc_size = 1 THEN
+        sc_addr = ast_large
+        sc_bbox = 15
+      ELSEIF sc_size = 2 THEN
+        sc_addr = ast_med
+        sc_bbox = 9
+      ELSE
+        sc_addr = ast_small
+        sc_bbox = 5
+      END IF
+
+      ' Random velocity -18..18
+      rvx = (RAND() MOD 37) - 18
+      rvy = (RAND() MOD 37) - 18
+
+      SPRITE fslot, sc_addr, sc_bbox, sc_bbox, sc_x, sc_y, SPR_VECTOR, rvx, rvy, EDGE_WRAP
+      ' Asteroids: own group 2, collide with bullets(4) + asteroids(2) = mask 6
+      SPR_GROUP fslot, 2, 6
+      SPR_COLL fslot, COLL_DETECT
+      ' Brief invincibility from asteroid-asteroid collision only
+      ast_inv(fslot - 5) = 25
+
+      rangle = RAND() AND 255
+      rspeed = (RAND() MOD 81) - 40
+      SPR_ROT fslot, rangle, rspeed
+
+      sizes(fslot - 5) = sc_size
+      ast_count = ast_count + 1
+      EXIT FOR
+    END IF
+  NEXT
+END SUB
+
+SUB spawn_random_asteroid()
+  ' Pick a random position away from the player
+  px, py = SPR_GET(0)
+
+  ' Try up to 5 times to find a spot >25px from player
+  FOR attempt = 0 TO 4
+    rx = RAND() MOD 128
+    ry = RAND() MOD 64
+    dx = rx - px
+    dy = ry - py
+    IF dx < 0 THEN dx = 0 - dx
+    IF dy < 0 THEN dy = 0 - dy
+    IF dx + dy > 25 THEN
+      spawn_child 1, rx, ry
+      EXIT FOR
+    END IF
+  NEXT
+END SUB
+
+SUB break_asteroid(slot)
+  ax, ay = SPR_GET(slot)
+  old_size = sizes(slot - 5)
+
+  ' Explosion at asteroid position
+  PFX_POS 1, ax, ay
+  PFX_BURST 1, 12
+
+  ' Clear size and destroy sprite
+  sizes(slot - 5) = 0
+  ast_inv(slot - 5) = 0
+  SPR_OFF slot
+  ast_count = ast_count - 1
+
+  ' Score by size
+  IF old_size = 1 THEN
+    score = score + 100
+  ELSEIF old_size = 2 THEN
+    score = score + 50
+  ELSE
+    score = score + 25
+  END IF
+
+  ' Split if not small (size < 3)
+  IF old_size < 3 THEN
+    spawn_child old_size + 1, ax - 3, ay
+    spawn_child old_size + 1, ax + 3, ay
+  END IF
 END SUB
 
 SUB check_collisions()
@@ -142,103 +238,44 @@ SUB check_collisions()
     END IF
   END IF
 
-  ' Scan asteroid slots 5-31 for bullet hits
+  ' Scan asteroid slots 5-31 for hits
   FOR slot = 5 TO 31
     IF sizes(slot - 5) <> 0 THEN
       hit_result = SPR_HIT(slot)
       IF hit_result AND 4 THEN
-        ' Verify collider is a bullet (slot 1-4)
         hit_index = hit_result SHR 8
+
+        ' Hit by bullet (slots 1-4)?
         IF hit_index >= 1 THEN
           IF hit_index < 5 THEN
-            ' Hit! Get position before destroying
-            ax, ay = SPR_GET(slot)
-            old_size = sizes(slot - 5)
+            SFX SFX_EXPLODE, 5
+            break_asteroid slot
+          END IF
+        END IF
 
-            ' Explosion at asteroid position
-            PFX_POS 1, ax, ay
-            PFX_BURST 1, 12
-
-            ' Clear size and destroy sprite
-            sizes(slot - 5) = 0
-            SPR_OFF slot
-            ast_count = ast_count - 1
-
-            ' Add score + sound by size (separate voices so they don't clobber)
-            IF old_size = 1 THEN
-              score = score + 100
-              SFX SFX_EXPLODE, 5
-            ELSEIF old_size = 2 THEN
-              score = score + 50
-              SFX SFX_HIT, 5
-            ELSE
-              score = score + 25
-              SFX SFX_BLIP, 5
-            END IF
-
-            ' Split if not small (size < 3)
-            IF old_size < 3 THEN
-              spawn_child old_size + 1, ax - 3, ay
-              spawn_child old_size + 1, ax + 3, ay
+        ' Hit by another asteroid (slots 5-31)?
+        ' Asteroid-asteroid collision (skip if either is invincible or small)
+        IF hit_index >= 5 THEN
+          IF hit_index <= 31 THEN
+            IF ast_inv(slot - 5) = 0 THEN
+              IF ast_inv(hit_index - 5) = 0 THEN
+                IF sizes(slot - 5) < 3 THEN
+                  SFX SFX_HIT, 5
+                  IF sizes(hit_index - 5) <> 0 THEN
+                    IF sizes(hit_index - 5) < 3 THEN
+                      break_asteroid hit_index
+                    END IF
+                  END IF
+                  IF sizes(slot - 5) <> 0 THEN
+                    break_asteroid slot
+                  END IF
+                END IF
+              END IF
             END IF
           END IF
         END IF
       END IF
     END IF
-  NEXT
-END SUB
-
-SUB spawn_child(sc_size, sc_x, sc_y)
-  ' Find free slot 5-31
-  FOR fslot = 5 TO 31
-    IF sizes(fslot - 5) = 0 THEN
-      ' Pick vector addr + bbox by size
-      IF sc_size = 1 THEN
-        sc_addr = ast_large
-        sc_bbox = 15
-      ELSEIF sc_size = 2 THEN
-        sc_addr = ast_med
-        sc_bbox = 9
-      ELSE
-        sc_addr = ast_small
-        sc_bbox = 5
-      END IF
-
-      ' Random velocity -18..18
-      rvx = (RAND() MOD 37) - 18
-      rvy = (RAND() MOD 37) - 18
-
-      SPRITE fslot, sc_addr, sc_bbox, sc_bbox, sc_x, sc_y, SPR_VECTOR, rvx, rvy, EDGE_WRAP
-      SPR_GROUP fslot, 2, 4
-      SPR_COLL fslot, COLL_DETECT
-
-      ' Random angle + random rotSpeed
-      rangle = RAND() AND 255
-      rspeed = (RAND() MOD 81) - 40
-      SPR_ROT fslot, rangle, rspeed
-
-      sizes(fslot - 5) = sc_size
-      ast_count = ast_count + 1
-      EXIT FOR
-    END IF
-  NEXT
-END SUB
-
-SUB spawn_wave()
-  wave = wave + 1
-  IF wave > 1 THEN SFX SFX_POWERUP, 5
-  wcount = wave + 3
-  IF wcount > 27 THEN wcount = 27
-
-  FOR wi = 0 TO wcount - 1
-    ' Random x: edge (5 or 110)
-    IF RAND() MOD 2 = 0 THEN
-      wx = 110
-    ELSE
-      wx = 5
-    END IF
-
-    spawn_child 1, wx, (RAND() MOD 50) + 5
   NEXT
 END SUB
 
@@ -261,29 +298,48 @@ DO
   DO WHILE game_state = 0
     check_collisions
 
-    ' Check if all asteroids destroyed -> next wave
-    IF ast_count = 0 THEN spawn_wave
+    ' -- Periodic asteroid spawning (ramps up over time) ----------------
+    spawn_timer = spawn_timer + 1
+    IF spawn_timer >= spawn_rate THEN
+      spawn_timer = 0
+      IF ast_count < 27 THEN
+        spawn_random_asteroid
+      END IF
+    END IF
+
+    ' Gradually decrease spawn interval (faster spawning)
+    frame_count = frame_count + 1
+    IF frame_count MOD 600 = 0 THEN
+      IF spawn_rate > 60 THEN
+        spawn_rate = spawn_rate - 15
+      END IF
+    END IF
+
+    ' -- Tick asteroid invincibility timers ------------------------------
+    FOR ai = 5 TO 31
+      IF ast_inv(ai - 5) > 0 THEN
+        ast_inv(ai - 5) = ast_inv(ai - 5) - 1
+      END IF
+    NEXT
 
     ' -- Invincibility flash -------------------------------------------
     IF invincible > 0 THEN
       invincible = invincible - 1
       SPR_COLL 0, COLL_NONE
 
-      ' Flash: hide ship when (timer AND 4) <> 0
       IF invincible AND 8 THEN
         SPR_VIS 0, 0
       ELSE
         SPR_VIS 0, 1
       END IF
     ELSE
-      ' Ensure ship visible + collision on
       SPR_VIS 0, 1
       SPR_COLL 0, COLL_DETECT
     END IF
 
     inp = INPUT()
 
-    ' -- Handle rotation (use signed encoder delta from INPUT high byte) --
+    ' -- Handle rotation -----------------------------------------------
     enc_delta = ASHR(inp, INPUT_ENC_DELTA_SHIFT)
     IF enc_delta <> 0 THEN
       angle = SPR_GETROT(0)
@@ -307,7 +363,6 @@ DO
       exhaust_dir = (thrust_angle + 128) AND 255
       PFX_SET 0, 25, 8, 5, exhaust_dir, 0, PFX_LIFE_VAR
       tx, ty = SPR_GET(0)
-      ' Offset emitter 5px behind ship center using exhaust direction
       ex_cos = COS(exhaust_dir)
       IF ex_cos >= 128 THEN ex_cos = ex_cos - 256
       ex_sin = SIN(exhaust_dir)
@@ -315,7 +370,6 @@ DO
       PFX_POS 0, tx + 4 + FX_MUL(ex_cos, 5, 7), ty + 4 + FX_MUL(ex_sin, 5, 7)
       PFX_ON 0, 2
 
-      ' Start thrust sound on transition
       IF was_thrust = 0 THEN
         was_thrust = 1
         VOICE 0, WAVE_NOISE, 150, 0
@@ -324,7 +378,6 @@ DO
     ELSE
       PFX_ON 0, 0
 
-      ' Release thrust sound on transition
       IF was_thrust = 1 THEN
         was_thrust = 0
         NOTEOFF 0
@@ -341,7 +394,6 @@ DO
 
         thrust_angle = (SPR_GETROT(0) + 192) AND 255
 
-        ' Bullet vx
         cos_val = COS(thrust_angle)
         IF cos_val < 128 THEN
           bvx = cos_val SHR 1
@@ -349,7 +401,6 @@ DO
           bvx = -((256 - cos_val) SHR 1)
         END IF
 
-        ' Bullet vy
         sin_val = SIN(thrust_angle)
         IF sin_val < 128 THEN
           bvy = sin_val SHR 1
@@ -369,7 +420,7 @@ DO
       END IF
     END IF
 
-    ' -- Apply drag: velocity *= 250/256 --------------------------------
+    ' -- Apply drag: velocity *= 253/256 --------------------------------
     ship_vx = FX_MUL(ship_vx, 253, 8)
     ship_vy = FX_MUL(ship_vy, 253, 8)
 
@@ -392,8 +443,9 @@ DO
   PFX_CLEAR PFX_ALL
 
   DO
-    TEXT_LG "GAME OVER", 37, 20
-    TEXT_NUM score, 52, 35
+    TEXT_LG "KESSLER", 40, 15
+    TEXT_LG "GAME OVER", 37, 25
+    TEXT_NUM score, 52, 40
 
     IF INPUT() AND INPUT_ENC_BTN THEN EXIT DO
 

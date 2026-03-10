@@ -51,6 +51,8 @@ export interface AudioManager {
   suspend(): void;
   /** Dispatch an audio command from the VM to the worklet. */
   dispatchAudioCmd(syscallId: number, args: number[], effect?: EffectPayload, song?: SongPayload): void;
+  /** Reset all synth state (silence voices, stop song). */
+  reset(): void;
   /** Tear down AudioContext. */
   cleanup(): void;
 }
@@ -77,6 +79,10 @@ export function createAudioManager(): AudioManager {
 
     initPromise = (async () => {
       ctx = new AudioContext({ sampleRate: 44100 });
+
+      if (!("audioWorklet" in ctx)) {
+        throw new Error("AudioWorklet unavailable. Use HTTPS or localhost.");
+      }
 
       await ctx.audioWorklet.addModule(SynthProcessorUrl);
 
@@ -141,6 +147,13 @@ export function createAudioManager(): AudioManager {
         node.port.postMessage({ type: syscallId, args, effect, song });
       } else {
         pendingCmds.push({ type: syscallId, args, effect, song });
+      }
+    },
+
+    reset() {
+      pendingCmds = [];
+      if (node) {
+        node.port.postMessage({ type: "reset" });
       }
     },
 

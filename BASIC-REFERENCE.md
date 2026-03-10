@@ -1394,6 +1394,8 @@ Pico-Gamer exposes a 6-voice synth on both web and device. The current audio mod
 - custom `EFFECT` definitions
 - `NOTE` for pitched playback
 - `SFX` for sound effects
+- `SONG` / `TRACK` for sequenced playback
+- `MPLAY` / `MSTOP` for song transport
 - per-voice filters and drive
 - one master filter on the final mix
 
@@ -1416,9 +1418,11 @@ Key points:
 
 - voices are `0..5`
 - waveforms are `WAVE_PULSE`, `WAVE_SAW`, `WAVE_TRI`, `WAVE_NOISE`, or `OFF`
+- `pulse_width`, `cutoff`, `resonance`, `drive`, and `volume` use `0..255`
 - `FILTER` is the master filter
 - `VFILTER` is the voice-local filter
 - `VDRIVE` adds per-voice saturation
+- `TONE` plays a convenience note and releases it automatically after `duration_ms`
 
 Available filter modes:
 
@@ -1427,6 +1431,11 @@ Available filter modes:
 - `FILTER_HP`
 - `FILTER_NOTCH`
 - `FILTER_COMB`
+
+Filter semantics:
+
+- for `FILTER_LP`, `FILTER_BP`, `FILTER_HP`, and `FILTER_NOTCH`, `cutoff` controls frequency and `resonance` controls emphasis around the cutoff
+- for `FILTER_COMB`, `cutoff` controls delay length and `resonance` controls feedback amount
 
 ### 19.2 EFFECT / STEP
 
@@ -1455,6 +1464,8 @@ Meaning:
 - `pulse_width = 255` means keep the current pulse width
 - `volume = 255` means keep the current volume
 - `filter_cutoff = 0` means do not change the voice-local cutoff
+- effect step values are compile-time constants
+- `filter_cutoff` only changes the voice-local filter cutoff, not its resonance or mode
 
 ### 19.3 NOTE
 
@@ -1474,6 +1485,12 @@ Arguments:
 - optional vibrato depth in cents
 
 Built-in note constants such as `C4`, `DS4`, `GS1`, and `A2` are available as BASIC constants.
+
+Notes:
+
+- `NOTE` always plays a custom `EFFECT`; built-in `SFX_*` presets are for `SFX`, not `NOTE`
+- in `NOTE` mode, a step pitch of `0` means "play exactly at the requested note pitch"
+- positive or negative `freq_or_cents` values in `STEP` shift pitch relative to the played note
 
 ### 19.4 SFX
 
@@ -1502,3 +1519,60 @@ Built-in preset constants:
 - `SFX_CLICK`
 - `SFX_WHOOSH`
 - `SFX_BLIP`
+
+### 19.5 SONG / TRACK
+
+`SONG` defines a simple sequencer pattern in compiled data. `TRACK` assigns one voice, one `EFFECT`, optional vibrato, and a pattern string:
+
+```basic
+SONG spacey, 92, 1
+  TRACK 0, bass, 0,   0, "C2:8 R:4 GS1:8 R:4 AS1:8 R:4 GS1:8 R:4"
+  TRACK 1, lead, 320, 8, "R:8 C4:4 DS4:4 G4:8 R:8 DS4:4 F4:4 C4:8"
+END SONG
+```
+
+Arguments:
+
+- `SONG name, bpm, loop`
+- `bpm` is stored as `0..255`; the runtime clamps values below `1` up to `1`
+- `loop` is treated as boolean: `0` = stop at end, nonzero = loop
+- each `TRACK` is `TRACK voice, effect, vibratoRate, vibratoDepth, pattern`
+- `voice` must be `0..5`
+- `effect` must be the name of a custom `EFFECT`
+- `vibratoRate` is in `1/64 Hz`
+- `vibratoDepth` is in cents
+- `pattern` must be a string literal
+
+Pattern syntax:
+
+- tokens are separated by spaces or commas
+- note tokens use `NOTE:DURATION`, for example `C4:4`, `DS4:2`, `F2:8`
+- rests use `R:DURATION` or `-:DURATION`
+- pattern notes accept letters `A` through `G`
+- accidentals can be written as `#` or `S`
+- octaves are `0..8`
+- durations are `1..255`
+
+Timing:
+
+- one pattern duration unit is one quarter of a beat
+- at the song BPM, `4` duration units equals one beat
+- a track's vibrato settings apply to every played note in that track
+
+Limits:
+
+- a song must contain at least one `TRACK`
+- a song can contain up to `255` tracks
+- each track can contain up to `255` events
+
+### 19.6 MPLAY / MSTOP
+
+```basic
+MPLAY spacey
+MSTOP
+```
+
+- `MPLAY song_name` starts the named song from the beginning
+- starting a new song stops the currently playing song first
+- `MSTOP` stops the active song and releases its voices
+- `MPLAY` expects a `SONG` label, not a raw pattern string

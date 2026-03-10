@@ -329,12 +329,14 @@ class SynthProcessor extends AudioWorkletProcessor {
   private tone: ToneTimer;
   private song: SongState | null;
   private sfxPresets: PresetStep[][] = [];
+  private voiceExternal: boolean[];
 
   constructor() {
     super();
     this.voices = [createVoice(), createVoice(), createVoice(), createVoice(), createVoice(), createVoice()];
     this.voiceFilters = [createFilter(), createFilter(), createFilter(), createFilter(), createFilter(), createFilter()];
     this.voiceDrive = [0, 0, 0, 0, 0, 0];
+    this.voiceExternal = [false, false, false, false, false, false];
     this.masterFilter = createFilter();
     this.masterVolume = 200 / 255; // sensible default
     this.sfx = [];
@@ -361,6 +363,10 @@ class SynthProcessor extends AudioWorkletProcessor {
         this.sfxPresets = msg.presets as PresetStep[][];
         return;
       }
+      if (msg.type === "reset") {
+        this.resetAll();
+        return;
+      }
       const { type, args, effect, song } = msg as { type: number; args: number[]; effect?: EffectPayload; song?: SongPayload };
       this.handleCommand(type, args, effect, song);
     };
@@ -372,6 +378,7 @@ class SynthProcessor extends AudioWorkletProcessor {
       case SYS_VOICE: {
         const [voice, waveform, freqHz, pw] = args;
         if (voice! < 0 || voice! > 5) break;
+        this.voiceExternal[voice!] = true;
         this.stopVoiceAutomation(voice!);
         this.startVoice(voice!, waveform!, freqHz!, pw!, sr, false);
         break;
@@ -389,6 +396,7 @@ class SynthProcessor extends AudioWorkletProcessor {
       case SYS_NOTE_OFF: {
         const [voice] = args;
         if (voice! < 0 || voice! > 5) break;
+        this.voiceExternal[voice!] = false;
         this.stopVoiceAutomation(voice!);
         const v = this.voices[voice!]!;
         if (v.envState !== ENV_OFF) v.envState = ENV_RELEASE;
@@ -418,6 +426,7 @@ class SynthProcessor extends AudioWorkletProcessor {
       case SYS_TONE: {
         const [voice, freqHz, durationMs] = args;
         if (voice! < 0 || voice! > 5) break;
+        this.voiceExternal[voice!] = true;
         this.stopVoiceAutomation(voice!);
         const v = this.voices[voice!]!;
         v.waveform = WAVE_PULSE;
@@ -438,6 +447,7 @@ class SynthProcessor extends AudioWorkletProcessor {
       case SYS_SFX: {
         const [effectRef, voice] = args;
         if (voice! < 0 || voice! > 5) break;
+        this.voiceExternal[voice!] = true;
         if (effect) {
           this.startEffect(voice!, effect);
           break;
@@ -450,6 +460,7 @@ class SynthProcessor extends AudioWorkletProcessor {
       case SYS_NOTE: {
         const [, voice] = args;
         if (voice! < 0 || voice! > 5 || !effect) break;
+        this.voiceExternal[voice!] = true;
         this.startEffect(voice!, effect);
         break;
       }
@@ -460,6 +471,24 @@ class SynthProcessor extends AudioWorkletProcessor {
         this.stopSong();
         break;
     }
+  }
+
+  private resetAll(): void {
+    for (let i = 0; i < 6; i++) {
+      this.stopVoiceAutomation(i);
+      const v = this.voices[i]!;
+      v.waveform = 0;
+      v.envState = ENV_OFF;
+      v.envLevel = 0;
+      v.phase = 0;
+      v.phaseStep = 0;
+      this.voiceFilters[i] = createFilter();
+      this.voiceDrive[i] = 0;
+      this.voiceExternal[i] = false;
+    }
+    this.masterFilter = createFilter();
+    this.masterVolume = 200 / 255;
+    this.stopSong();
   }
 
   private stopVoiceAutomation(voice: number): void {
@@ -570,6 +599,19 @@ class SynthProcessor extends AudioWorkletProcessor {
     if (!currentSong) return;
     const event = track.events[track.eventIndex]!;
     track.samplesLeft = Math.max(1, event.duration * currentSong.stepSamples);
+
+    // If the voice is externally occupied (SFX/VOICE/TONE), skip this note
+    // but keep the timer running so the song stays in sync
+    if (this.voiceExternal[track.voice]) {
+      // Check if the external sound has finished (envelope off and no active automation)
+      const v = this.voices[track.voice]!;
+      const eng = this.sfx[track.voice]!;
+      if (v.envState === ENV_OFF && !eng.active) {
+        this.voiceExternal[track.voice] = false;
+      } else {
+        return;
+      }
+    }
 
     if (event.pitch === SONG_REST_PITCH) {
       this.stopVoiceAutomation(track.voice);

@@ -10,3 +10,5 @@ firmware/*/build/
 **/.DS_Store
 reviews/
 .cache/
+.artifacts/
+.vscode/
