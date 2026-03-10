@@ -130,7 +130,8 @@ void updateParticles(ParticleTable& table, uint16_t& rngState) {
     }
 }
 
-void drawParticles(const ParticleTable& table, Framebuffer& fb) {
+void drawParticles(const ParticleTable& table, Framebuffer& fb,
+                   int16_t cam_x, int16_t cam_y) {
     for (int i = 0; i < MAX_PARTICLES; i++) {
         const Particle& p = table.particles[i];
         if (p.life == 0) continue;
@@ -138,8 +139,8 @@ void drawParticles(const ParticleTable& table, Framebuffer& fb) {
         // Flicker effect in last 3 frames of life
         if (p.life <= 3 && (p.life & 1) == 0) continue;
 
-        int px = p.x_fp >> 8;  // 8.8 to pixel
-        int py = p.y_fp >> 8;
+        int px = (p.x_fp >> 8) - cam_x;
+        int py = (p.y_fp >> 8) - cam_y;
 
         int color = (p.flags & PFX_FLAG_BLACK) ? 0 : 1;
 

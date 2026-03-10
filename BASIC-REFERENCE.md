@@ -600,23 +600,23 @@ angle = SPR_GETROT(slot)     ' Get current angle (0-255)
 
 The rotation system uses a quarter-wave sine lookup table for efficient fixed-point rotation. Angle 0 = no rotation, 64 = 90 degrees, 128 = 180 degrees, 192 = 270 degrees.
 
-### 8.11 Wall Collisions
+### 8.11 Wall / Tile Collisions
 
 ```basic
 SPR_WALL slot, mode
 ```
 
-Sets the collision response when this sprite overlaps a wall rectangle.
+Sets the collision response when this sprite overlaps a solid surface (wall rectangle or solid tile).
 
 | Constant | Value | Behavior |
 |---|---|---|
-| `COLL_NONE` | 0 | No wall collision |
+| `COLL_NONE` | 0 | No wall/tile collision |
 | `COLL_DETECT` | 1 | Detect only (set hitFlags, no physics response) |
-| `COLL_BOUNCE` | 2 | Bounce off wall, reversing velocity on collision axis |
-| `COLL_DESTROY` | 3 | Deactivate sprite on wall contact |
-| `COLL_STOP` | 4 | Stop at wall, zero velocity on collision axis |
+| `COLL_BOUNCE` | 2 | Bounce off, reversing velocity on collision axis |
+| `COLL_DESTROY` | 3 | Deactivate sprite on contact |
+| `COLL_STOP` | 4 | Stop at boundary, zero velocity on collision axis |
 
-When a wall collision occurs, hitFlags bit 1 is set and hitIndex is the wall slot.
+When a collision occurs, hitFlags bit 1 is set. When a tilemap is active, `SPR_WALL` checks tile solidity; otherwise it checks wall rectangles. See section 9.7 for tile collision details.
 
 ### 8.12 Sprite-Sprite Collisions
 
@@ -691,63 +691,335 @@ SPR_ON_HIT 0, on_hit
 
 Callbacks run during the sprite update phase with a budget of 5,000 VM cycles.
 
-### 8.16 Frame Lifecycle
+### 8.16 SPR_IMG -- Change Sprite Bitmap
+
+```basic
+SPR_IMG slot, addr
+```
+
+Change the bitmap address of an existing sprite at runtime. The new address points to bitmap data in the same format as the original (same width/height). Useful for frame-by-frame animation.
+
+```basic
+DATA walk1, $3C,$7E,$7E,$7E,$7E,$7E,$7E,$3C
+DATA walk2, $3C,$7E,$7E,$78,$70,$78,$7E,$3C
+
+SPRITE 0, walk1, 8, 8, 60, 28, 0, 32, 0, EDGE_NONE
+DO
+  IF frame AND 8 THEN
+    SPR_IMG 0, walk1
+  ELSE
+    SPR_IMG 0, walk2
+  END IF
+  YIELD
+LOOP
+```
+
+### 8.17 SPR_ANIM -- Automatic Sprite Animation
+
+```basic
+SPR_ANIM slot, addr, frameCount, rate
+```
+
+| Arg | Description |
+|---|---|
+| `slot` | Sprite slot index (0--31) |
+| `addr` | Address of first animation frame (DATA label) |
+| `frameCount` | Number of frames in the animation (consecutive 8-byte bitmaps) |
+| `rate` | Frames per animation step (e.g., 8 = change every 8 game frames) |
+
+The engine automatically cycles through `frameCount` consecutive bitmaps starting at `addr`, advancing one frame every `rate` game frames. The bitmaps must be laid out consecutively in DATA (each frame is `ceil(w/8) * h` bytes).
+
+Set `frameCount` to 0 or 1 to disable animation (static bitmap).
+
+```basic
+' 4-frame walk animation, advances every 8 game frames
+DATA walk_f0, $3C,$7E,$7E,$7E,$7E,$7E,$7E,$3C
+DATA walk_f1, $3C,$7E,$7E,$78,$70,$78,$7E,$3C
+DATA walk_f2, $3C,$7E,$7E,$7E,$7E,$7E,$7E,$3C
+DATA walk_f3, $3C,$7E,$7E,$1E,$0E,$1E,$7E,$3C
+
+SPRITE 0, walk_f0, 8, 8, 60, 28, 0, 32, 0, EDGE_NONE
+SPR_ANIM 0, walk_f0, 4, 8
+' Engine now handles animation -- no per-frame BASIC code needed
+```
+
+### 8.18 SPR_DIR -- Set Velocity from Direction
+
+```basic
+SPR_DIR slot, dir, speed
+```
+
+Sets sprite velocity based on a 4-direction enum and speed magnitude. Eliminates the common 4-way `IF/ELSEIF` pattern for converting direction to velocity components.
+
+| Arg | Description |
+|---|---|
+| `slot` | Sprite slot index (0--31) |
+| `dir` | Direction: 0=right, 1=down, 2=left, 3=up |
+| `speed` | Speed magnitude in velocity units (64 = 1 px/frame) |
+
+```basic
+CONST DIR_RIGHT = 0
+CONST DIR_DOWN = 1
+CONST DIR_LEFT = 2
+CONST DIR_UP = 3
+
+SPR_DIR 0, DIR_RIGHT, 32    ' Same as SPR_VEL 0, 32, 0
+SPR_DIR 0, DIR_UP, 64       ' Same as SPR_VEL 0, 0, -64
+```
+
+### 8.19 Frame Lifecycle
 
 Each game frame proceeds in this order:
 
 1. **Framebuffer cleared** (all pixels set to black)
 2. **VM executes** up to 50,000 cycles or until YIELD
-3. **Sprite physics** -- positions updated from velocities
-4. **Wall collisions** resolved
-5. **Sprite-sprite collisions** resolved
-6. **Edge behaviors** applied
-7. **Hit callbacks** invoked for any sprites with non-zero hitFlags
-8. **Sprites drawn** to framebuffer (active and visible sprites only)
-9. **Particles updated** -- continuous emitters spawn, velocity/gravity applied, life decremented
-10. **Particles drawn** to framebuffer (on top of sprites)
-11. **Framebuffer rendered** to canvas
+3. **Sprite animations** -- engine advances animation frames for sprites with SPR_ANIM
+4. **Sprite physics** -- positions updated from velocities
+5. **Tile collisions** resolved (for sprites with `SPR_WALL` and an active tilemap)
+6. **Sprite-sprite collisions** resolved
+7. **Edge behaviors** applied
+8. **Hit callbacks** invoked for any sprites with non-zero hitFlags
+9. **Viewport updated** -- camera position follows target sprite or manual position, clamped to world bounds
+10. **Tilemap drawn** to framebuffer (visible tiles only, camera-aware)
+11. **Sprites drawn** to framebuffer (active and visible sprites only, camera-offset applied)
+12. **Particles updated** -- continuous emitters spawn, velocity/gravity applied, life decremented
+13. **Particles drawn** to framebuffer (on top of sprites)
+14. **Framebuffer rendered** to canvas
 
 ---
 
-## 9. Wall System
+## 9. Tile System
 
-Walls are invisible collision rectangles (up to **16 slots**, 0--15). Sprites can collide with walls based on their `wallMode`.
+The tile system provides a hardware-accelerated tilemap renderer with built-in collision. Tiles replace the wall system for grid-based games -- the map data *is* the collision data.
 
-### 9.1 WALL_SET
+### 9.1 Overview
+
+A tilemap consists of:
+- A **tileset**: up to 32 tile types, each an 8x8 1-bit bitmap (8 bytes per tile)
+- A **map**: a grid of tile indices (one byte per cell)
+- **Tile properties**: per-tile-index flags (solid, etc.)
+
+The engine renders only the tiles visible on screen each frame (camera-aware), and resolves sprite-tile collisions automatically.
+
+### 9.2 TILESET -- Register Tile Graphics
 
 ```basic
-WALL_SET slot, x, y, w, h
+TILESET addr, count
 ```
 
-Define a wall rectangle at position (x, y) with width w and height h.
+| Arg | Description |
+|---|---|
+| `addr` | Address of first tile bitmap (DATA label) |
+| `count` | Number of tile types (max 32) |
 
-### 9.2 WALL_OFF
+Tile bitmaps must be consecutive in DATA, 8 bytes each (8x8 1-bit, same format as sprite bitmaps). Tile index 0 is always **empty** (transparent, non-solid) regardless of its bitmap.
 
 ```basic
-WALL_OFF slot
+DATA tiles,  $00,$00,$00,$00,$00,$00,$00,$00  ' 0 = empty (never drawn)
+DATA tiles1, $3C,$7E,$7E,$7E,$7E,$7E,$7E,$3C  ' 1 = wall
+DATA tiles2, $00,$00,$00,$18,$18,$00,$00,$00  ' 2 = dot
+DATA tiles3, $00,$3C,$7E,$7E,$7E,$7E,$3C,$00  ' 3 = power pellet
+
+TILESET tiles, 4
 ```
 
-Deactivate a wall slot.
-
-To make walls visible, draw rectangles at the same coordinates in your frame loop:
+### 9.3 TILE_PROP -- Set Tile Properties
 
 ```basic
-WALL_SET 0, 30, 0, 4, 64
+TILE_PROP tileIndex, flags
+```
+
+| Arg | Description |
+|---|---|
+| `tileIndex` | Tile type index (0--31) |
+| `flags` | Property bitmask |
+
+| Constant | Value | Description |
+|---|---|---|
+| `TILE_SOLID` | 1 | Tile blocks sprite movement (acts as a wall) |
+| `TILE_ANIM` | 2 | Tile alternates with the next tile index at a fixed rate |
+
+```basic
+TILE_PROP 1, TILE_SOLID               ' Wall tiles block sprites
+TILE_PROP 3, TILE_ANIM                ' Power pellet flashes (alternates with tile 4)
+```
+
+Animated tiles alternate between tile index N and N+1 every 16 game frames.
+
+### 9.4 TILEMAP -- Load Map Data
+
+```basic
+TILEMAP addr, w, h
+```
+
+| Arg | Description |
+|---|---|
+| `addr` | Address of map data (DATA label): w*h bytes, row-major |
+| `w` | Map width in tiles |
+| `h` | Map height in tiles |
+
+The world size in pixels is `w * 8` by `h * 8`. Loading a tilemap also sets the viewport world size accordingly (equivalent to calling `CAM_WORLD w*8, h*8`).
+
+```basic
+DATA map, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+DATA map1, 1,2,2,2,2,2,2,1,1,2,2,2,2,2,2,1
+' ... one DATA line per row, 16 bytes each
+DATA map15, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+
+TILEMAP map, 16, 16    ' 16x16 tiles = 128x128 pixel world
+```
+
+Map data uses 8-bit values (one byte per tile). Each byte is a tile index into the tileset. The DATA blocks must be contiguous.
+
+### 9.5 TILE_SET -- Modify a Single Tile
+
+```basic
+TILE_SET col, row, tileIndex
+```
+
+Change a tile at runtime. Used for game logic like eating dots:
+
+```basic
+TILE_SET ptx, pty, 0    ' Clear the dot tile to empty
+```
+
+### 9.6 TILE_GET -- Read a Tile
+
+```basic
+t = TILE_GET(col, row)
+```
+
+Returns the tile index at the given grid position. Returns 0 for out-of-bounds coordinates. Useful for game logic (checking what's ahead, AI pathfinding):
+
+```basic
+t = TILE_GET(px + 1, py)
+IF t <> 1 THEN
+  ' Can move right
+END IF
+```
+
+### 9.7 Tile-Based Collision
+
+Sprites collide with solid tiles using the same `SPR_WALL` mode that previously applied to wall rectangles:
+
+```basic
+SPR_WALL slot, COLL_STOP    ' Stop at solid tiles
+```
+
+When a tilemap is active, `SPR_WALL` checks the sprite's bounding box against the tile grid instead of wall AABBs. The collision modes work identically:
+
+| Mode | Behavior |
+|---|---|
+| `COLL_NONE` | No tile collision |
+| `COLL_DETECT` | Set hitFlags bit 1, no physics response |
+| `COLL_BOUNCE` | Bounce off solid tile, reverse velocity on collision axis |
+| `COLL_STOP` | Stop at tile boundary, zero velocity on collision axis |
+| `COLL_DESTROY` | Deactivate sprite on solid tile contact |
+
+The collision resolver checks the tiles overlapped by the sprite's bounding box after velocity is applied. If any overlapping tile is solid, it pushes the sprite back to the tile boundary and applies the collision response.
+
+When a tile collision occurs, `hitFlags` bit 1 is set (same as wall hits).
+
+### 9.8 Backward Compatibility: Wall System
+
+The wall rectangle system (`WALL_SET`, `WALL_OFF`) continues to work for games that don't use tilemaps. When no tilemap is active, `SPR_WALL` checks against wall rectangles as before.
+
+When a tilemap *is* active, `SPR_WALL` checks tiles instead of wall rectangles. The two systems are mutually exclusive -- use one or the other.
+
+---
+
+## 10. Viewport and Camera
+
+The viewport system allows the game world to be larger than the 128x64 screen. The engine handles scrolling automatically -- game code works in world coordinates and is oblivious to the camera.
+
+### 10.1 CAM_WORLD -- Set World Size
+
+```basic
+CAM_WORLD w, h
+```
+
+Set the world dimensions in pixels. Default is 128x64 (screen size, no scrolling). When a tilemap is loaded via `TILEMAP`, the world size is set automatically.
+
+### 10.2 CAM_MODE -- Set Camera Mode
+
+```basic
+CAM_MODE mode, slot
+```
+
+| Arg | Description |
+|---|---|
+| `mode` | Scroll mode constant |
+| `slot` | Sprite slot to follow (only used with `SCROLL_FOLLOW`) |
+
+| Constant | Value | Description |
+|---|---|---|
+| `SCROLL_NONE` | 0 | No scrolling (default) |
+| `SCROLL_FOLLOW` | 1 | Camera centers on the specified sprite slot |
+| `SCROLL_MANUAL` | 2 | Camera position set manually via `CAM_POS` |
+
+```basic
+CAM_MODE SCROLL_FOLLOW, 0    ' Camera follows sprite 0
+```
+
+The camera clamps to world bounds so it never shows area outside the world.
+
+### 10.3 CAM_POS -- Set Camera Position (Manual Mode)
+
+```basic
+CAM_POS x, y
+```
+
+Set the top-left corner of the visible area in world coordinates. Only effective when `CAM_MODE` is `SCROLL_MANUAL`.
+
+### 10.4 CAM_GET -- Get Camera Position
+
+```basic
+cx, cy = CAM_GET()
+```
+
+Returns the current camera top-left position in world coordinates. Works in any mode.
+
+### 10.5 CAM_HUD -- Toggle HUD Mode
+
+```basic
+CAM_HUD 1    ' Enable HUD mode: drawing uses screen coordinates
+' ... draw HUD elements ...
+CAM_HUD 0    ' Disable HUD mode: drawing uses world coordinates
+```
+
+When HUD mode is active, all drawing commands (PIXEL, LINE, RECT, BLIT, TEXT_SM, TEXT_LG, TEXT_NUM) use screen coordinates instead of world coordinates. Use this for score displays, health bars, and other fixed UI.
+
+### 10.6 Camera-Aware Drawing
+
+When the camera is active, all drawing syscalls automatically offset by the camera position. Sprites and particles are also offset automatically. Game code always works in world coordinates:
+
+```basic
+CAM_WORLD 256, 128
+CAM_MODE SCROLL_FOLLOW, 0
+
 DO
-  RECT 30, 0, 4, 64        ' Draw visible representation
+  ' These draw in world coords -- engine applies camera offset
+  PIXEL 200, 100, 1
+  RECT 50, 50, 10, 10
+
+  ' Switch to screen coords for HUD
+  CAM_HUD 1
+  TEXT_NUM score, 1, 1
+  CAM_HUD 0
+
   YIELD
 LOOP
 ```
 
 ---
 
-## 10. Particle System
+## 11. Particle System
 
 The engine provides a native particle system for visual effects like explosions, rocket exhaust, and fireworks. It runs entirely in native code, so games get rich effects with minimal VM overhead -- one syscall to configure an emitter, one to trigger a burst.
 
 **4 emitters, 128 particles.** Particles are transient (no collision, no callbacks). They are drawn after sprites (on top).
 
-### 10.1 PFX_SET -- Configure an Emitter
+### 11.1 PFX_SET -- Configure an Emitter
 
 ```basic
 PFX_SET slot, speed, life, spread, direction, gravity, flags
@@ -763,7 +1035,7 @@ PFX_SET slot, speed, life, spread, direction, gravity, flags
 | `gravity` | Y acceleration per frame (signed: positive = down, negative = up) |
 | `flags` | Emitter flags (see below) |
 
-### 10.2 PFX_POS -- Set Emitter Position
+### 11.2 PFX_POS -- Set Emitter Position
 
 ```basic
 PFX_POS slot, x, y
@@ -771,7 +1043,7 @@ PFX_POS slot, x, y
 
 Sets the source position for particles spawned from this emitter.
 
-### 10.3 PFX_BURST -- Spawn a Burst
+### 11.3 PFX_BURST -- Spawn a Burst
 
 ```basic
 PFX_BURST slot, count
@@ -779,7 +1051,7 @@ PFX_BURST slot, count
 
 Immediately spawns `count` particles from emitter `slot`. Particles that exceed the 128-particle pool are silently dropped.
 
-### 10.4 PFX_ON -- Continuous Emission
+### 11.4 PFX_ON -- Continuous Emission
 
 ```basic
 PFX_ON slot, rate
@@ -787,7 +1059,7 @@ PFX_ON slot, rate
 
 Sets the emitter to continuously spawn `rate` particles per frame. Set `rate` to 0 to stop.
 
-### 10.5 PFX_CLEAR -- Clear Particles
+### 11.5 PFX_CLEAR -- Clear Particles
 
 ```basic
 PFX_CLEAR slot
@@ -795,7 +1067,7 @@ PFX_CLEAR slot
 
 Clears emitter `slot` and kills all its particles. Use `PFX_CLEAR PFX_ALL` to clear all emitters and particles.
 
-### 10.6 Particle Flags
+### 11.6 Particle Flags
 
 | Constant | Value | Description |
 |---|---|---|
@@ -807,14 +1079,14 @@ Clears emitter `slot` and kills all its particles. Use `PFX_CLEAR PFX_ALL` to cl
 
 Combine with OR: `PFX_2X2 OR PFX_SPEED_VAR OR PFX_LIFE_VAR` = `52`.
 
-### 10.7 Particle Physics
+### 11.7 Particle Physics
 
 - Velocity uses the same fixed-point system as sprites (64 = 1 px/frame)
 - Gravity is applied every frame: `vy += gravity`
 - Particles flicker (alternate visible/invisible) in the last 3 frames of life for a fade effect
 - Particles have no collision detection -- they are purely visual
 
-### 10.8 Examples
+### 11.8 Examples
 
 **Explosion:**
 
@@ -834,9 +1106,9 @@ PFX_ON 1, 2
 
 ---
 
-## 11. Input
+## 12. Input
 
-### 11.1 INPUT() Function
+### 12.1 INPUT() Function
 
 ```basic
 inp = INPUT()
@@ -846,7 +1118,7 @@ Returns a 16-bit input word:
 - Low byte (`bits 0-7`): button bitfield.
 - High byte (`bits 8-15`): signed encoder delta (accumulated detents for this frame, `+` CW / `-` CCW).
 
-### 11.2 Input Constants
+### 12.2 Input Constants
 
 | Constant | Value | Bit | Input |
 |---|---|---|---|
@@ -861,7 +1133,7 @@ Returns a 16-bit input word:
 | `INPUT_ENC_DELTA_SHIFT` | 8 | — | Right-shift amount to read signed encoder delta from INPUT() |
 | `INPUT_ENC_DELTA_MASK` | 65280 | — | Mask for encoder delta byte (`0xFF00`) |
 
-### 11.3 Testing Input
+### 12.3 Testing Input
 
 Use bitwise AND to test individual buttons:
 
@@ -885,9 +1157,9 @@ angle = (angle + enc_delta * 4) AND 255
 
 ---
 
-## 12. Math and Utility Functions
+## 13. Math and Utility Functions
 
-### 12.1 RAND()
+### 13.1 RAND()
 
 ```basic
 x = RAND()
@@ -902,7 +1174,7 @@ x = RAND() MOD 100         ' 0 to 99
 x = RAND() MOD 128         ' 0 to 127 (full screen X)
 ```
 
-### 12.2 TIME()
+### 13.2 TIME()
 
 ```basic
 t = TIME()
@@ -910,7 +1182,7 @@ t = TIME()
 
 Returns milliseconds elapsed since program start, masked to 16 bits (wraps every ~65.5 seconds).
 
-### 12.3 SIN(angle)
+### 13.3 SIN(angle)
 
 ```basic
 s = SIN(angle)
@@ -925,7 +1197,7 @@ Lookup-table sine function. Angle is 0--255 (256 steps = 360 degrees). Returns a
 
 The returned value represents `sin(angle) * 127`, stored as an unsigned byte. Values >= 128 represent negative results (use `IF val >= 128 THEN val = val - 256` to get the signed value).
 
-### 12.4 COS(angle)
+### 13.4 COS(angle)
 
 ```basic
 c = COS(angle)
@@ -933,7 +1205,7 @@ c = COS(angle)
 
 Same as SIN but offset by 64 (90 degrees): `COS(angle) = SIN(angle + 64)`.
 
-### 12.5 ABS(value)
+### 13.5 ABS(value)
 
 ```basic
 x = ABS(y)
@@ -941,7 +1213,7 @@ x = ABS(y)
 
 Returns the absolute value. If the value is negative (bit 15 set, i.e., >= 0x8000), it is negated.
 
-### 12.6 ASHR(value, bits)
+### 13.6 ASHR(value, bits)
 
 ```basic
 x = ASHR(value, bits)
@@ -954,7 +1226,7 @@ x = ASHR(256, 2)       ' = 64 (positive: same as SHR)
 x = ASHR(-256, 2)      ' = -64 (sign preserved, stored as 0xFFC0)
 ```
 
-### 12.7 FX_MUL(a, b, q)
+### 13.7 FX_MUL(a, b, q)
 
 ```basic
 x = FX_MUL(a, b, q)
@@ -974,9 +1246,9 @@ delta = FX_MUL(cos_val, 5, 5)
 
 ---
 
-## 13. Control Flow Syscalls
+## 14. Control Flow Syscalls
 
-### 13.1 YIELD
+### 14.1 YIELD
 
 ```basic
 YIELD
@@ -994,27 +1266,13 @@ Signals the end of one frame of game logic. The runtime will:
 
 Every game loop **must** call YIELD once per frame. Without it, the VM runs until its 50,000-cycle budget is exhausted.
 
-### 13.2 HALT
+### 14.2 HALT
 
 ```basic
 HALT
 ```
 
 Stops the VM permanently. The program ends. (A HALT is also automatically appended at the end of every BASIC program.)
-
----
-
-## 14. Tile System (Stubbed)
-
-The following syscalls are defined but **not yet implemented** in the web emulator:
-
-| Syscall | ID | Purpose |
-|---|---|---|
-| `TILESET` | 0x07 | Load tileset graphics |
-| `TILEMAP` | 0x08 | Set tile map |
-| `SCROLL` | 0x09 | Set scroll offset |
-
-These are reserved for future implementation.
 
 ---
 
@@ -1062,6 +1320,30 @@ All of these constants are available without declaration:
 | `SPR_FLIPX` | 1 |
 | `SPR_FLIPY` | 2 |
 | `SPR_VECTOR` | 4 |
+
+### Tile Properties
+
+| Name | Value |
+|---|---|
+| `TILE_SOLID` | 1 |
+| `TILE_ANIM` | 2 |
+
+### Camera / Scroll Modes
+
+| Name | Value |
+|---|---|
+| `SCROLL_NONE` | 0 |
+| `SCROLL_FOLLOW` | 1 |
+| `SCROLL_MANUAL` | 2 |
+
+### Direction Constants
+
+| Name | Value |
+|---|---|
+| `DIR_RIGHT` | 0 |
+| `DIR_DOWN` | 1 |
+| `DIR_LEFT` | 2 |
+| `DIR_UP` | 3 |
 
 ### Particle Flags
 
@@ -1260,6 +1542,19 @@ This is the complete list of syscall IDs. BASIC programs call these through the 
 | 0x52 | PFX_BURST | `PFX_BURST slot, count` | count, slot | -- |
 | 0x53 | PFX_ON | `PFX_ON slot, rate` | rate, slot | -- |
 | 0x54 | PFX_CLEAR | `PFX_CLEAR slot` | slot | -- |
+| 0x55 | SPR_IMG | `SPR_IMG slot, addr` | addr, slot | -- |
+| 0x56 | SPR_ANIM | `SPR_ANIM slot, addr, count, rate` | rate, count, addr, slot | -- |
+| 0x57 | SPR_DIR | `SPR_DIR slot, dir, speed` | speed, dir, slot | -- |
+| 0x07 | TILESET | `TILESET addr, count` | count, addr | -- |
+| 0x08 | TILEMAP | `TILEMAP addr, w, h` | h, w, addr | -- |
+| 0x09 | TILE_PROP | `TILE_PROP tileIndex, flags` | flags, tileIndex | -- |
+| 0x0A | TILE_SET | `TILE_SET col, row, tileIndex` | tileIndex, row, col | -- |
+| 0x0B | TILE_GET | `TILE_GET(col, row)` | row, col | tileIndex |
+| 0x60 | CAM_WORLD | `CAM_WORLD w, h` | h, w | -- |
+| 0x61 | CAM_MODE | `CAM_MODE mode, slot` | slot, mode | -- |
+| 0x62 | CAM_POS | `CAM_POS x, y` | y, x | -- |
+| 0x63 | CAM_GET | `cx, cy = CAM_GET()` | -- | cx, cy |
+| 0x64 | CAM_HUD | `CAM_HUD flag` | flag | -- |
 
 ---
 

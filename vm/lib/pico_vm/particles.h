@@ -62,7 +62,8 @@ void burstParticles(ParticleTable& table, int slot, int count, uint16_t& rngStat
 void updateParticles(ParticleTable& table, uint16_t& rngState);
 
 // Draw all live particles to the framebuffer.
-void drawParticles(const ParticleTable& table, Framebuffer& fb);
+void drawParticles(const ParticleTable& table, Framebuffer& fb,
+                   int16_t cam_x = 0, int16_t cam_y = 0);
 
 // Clear particles: slot 0-3 clears that emitter + its particles; 255 clears all.
 void clearParticles(ParticleTable& table, int slot);

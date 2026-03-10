@@ -18,7 +18,9 @@ enum Sys : uint8_t {
     SYS_TILESET    = 0x07,
     SYS_TILEMAP    = 0x08,
     SYS_SCROLL     = 0x09,
-    SYS_SPRITE_OVER= 0x0A,
+    SYS_TILE_PROP  = 0x09,
+    SYS_TILE_SET   = 0x0A,
+    SYS_TILE_GET   = 0x0B,
 
     SYS_INPUT      = 0x10,
 
@@ -48,6 +50,9 @@ enum Sys : uint8_t {
     SYS_SPR_ROT    = 0x4D,
     SYS_SPR_GETROT = 0x4E,
     SYS_SPR_VIS    = 0x4F,
+    SYS_SPR_IMG    = 0x55,
+    SYS_SPR_ANIM   = 0x56,
+    SYS_SPR_DIR    = 0x57,
 
     SYS_VOICE      = 0x30,
     SYS_ENVELOPE   = 0x31,
@@ -67,6 +72,12 @@ enum Sys : uint8_t {
     SYS_PFX_BURST  = 0x52,
     SYS_PFX_ON     = 0x53,
     SYS_PFX_CLEAR  = 0x54,
+
+    SYS_CAM_WORLD  = 0x60,
+    SYS_CAM_MODE   = 0x61,
+    SYS_CAM_POS    = 0x62,
+    SYS_CAM_GET    = 0x63,
+    SYS_CAM_HUD    = 0x64,
 };
 
 // Audio command ring buffer
@@ -84,11 +95,17 @@ struct AudioCmdBuffer {
     int count;
 };
 
+struct Viewport;
+
+struct TileMap;
+
 struct SyscallContext {
     Framebuffer*   fb;
     SpriteTable*   sprites;
     WallTable*     walls;
     ParticleTable* particles;
+    Viewport*      viewport;
+    TileMap*       tilemap;
     AudioCmdBuffer audio;
     uint16_t       inputBits;
     bool           yieldRequested;
