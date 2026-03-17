@@ -79,7 +79,7 @@ const FRAME_DT = 1 / TARGET_FPS;
 const SYS_SFX = 0x36;
 const SYS_NOTE = 0x38;
 const SYS_MPLAY = 0x3a;
-const BUILTIN_SFX_COUNT = 16;
+const BUILTIN_SFX_COUNT = 18;
 const SONG_REST_PITCH = 0xff;
 
 function buildStackText(vm: WasmVM): string {

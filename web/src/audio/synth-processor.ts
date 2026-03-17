@@ -23,7 +23,7 @@ const SYS_NOTE     = 0x38;
 const SYS_VDRIVE   = 0x39;
 const SYS_MPLAY    = 0x3a;
 const SYS_MSTOP    = 0x3b;
-const BUILTIN_SFX_COUNT = 16;
+const BUILTIN_SFX_COUNT = 18;
 const SONG_REST_PITCH = 0xff;
 
 // Waveform IDs
