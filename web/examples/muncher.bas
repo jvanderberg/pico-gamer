@@ -450,15 +450,7 @@ SUB update_ghost(mg_i)
       gspd = GHOST_SPD
     END IF
 
-    IF gdir(mg_i) = DIR_RIGHT THEN
-      SPR_VEL gslot, gspd, 0
-    ELSEIF gdir(mg_i) = DIR_DOWN THEN
-      SPR_VEL gslot, 0, gspd
-    ELSEIF gdir(mg_i) = DIR_LEFT THEN
-      SPR_VEL gslot, 0 - gspd, 0
-    ELSE
-      SPR_VEL gslot, 0, 0 - gspd
-    END IF
+    SPR_DIR gslot, gdir(mg_i), gspd
   END IF
 END SUB
 
@@ -587,15 +579,7 @@ SUB move_player()
     END IF
 
     IF can_walk_r = 1 THEN
-      IF pdir = DIR_RIGHT THEN
-        SPR_VEL 0, PAC_SPD, 0
-      ELSEIF pdir = DIR_LEFT THEN
-        SPR_VEL 0, 0 - PAC_SPD, 0
-      ELSEIF pdir = DIR_UP THEN
-        SPR_VEL 0, 0, 0 - PAC_SPD
-      ELSE
-        SPR_VEL 0, 0, PAC_SPD
-      END IF
+      SPR_DIR 0, pdir, PAC_SPD
     ELSE
       SPR_VEL 0, 0, 0
     END IF
