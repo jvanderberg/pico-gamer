@@ -170,4 +170,24 @@ export const SFX_PRESETS: SfxStep[][] = [
     { delaySamples: ms(5),  waveform: TRI, freqHz: 400, pulseWidth: 0, volume: 140, filterCutoff: 0 },
     { delaySamples: ms(4),  waveform: OFF, freqHz: 0,   pulseWidth: 0, volume: 0,   filterCutoff: 0 },
   ],
+
+  // 16: CHOMP_A — crunchy dot eat, high "waka"
+  // Noise crunch into pulse chirp down. Filter opens wide for pulse steps.
+  [
+    { delaySamples: 0,       waveform: NOISE, freqHz: 4000, pulseWidth: 0,   volume: 255, filterCutoff: 180 },
+    { delaySamples: ms(6),   waveform: PULSE, freqHz: 600,  pulseWidth: 128, volume: 255, filterCutoff: 255 },
+    { delaySamples: ms(8),   waveform: PULSE, freqHz: 400,  pulseWidth: 128, volume: 180, filterCutoff: 255 },
+    { delaySamples: ms(8),   waveform: PULSE, freqHz: 250,  pulseWidth: 128, volume: 60,  filterCutoff: 255 },
+    { delaySamples: ms(4),   waveform: OFF,   freqHz: 0,    pulseWidth: 0,   volume: 0,   filterCutoff: 0 },
+  ],
+
+  // 17: CHOMP_B — crunchy dot eat, low "waka"
+  // Same shape, lower pitch for alternation
+  [
+    { delaySamples: 0,       waveform: NOISE, freqHz: 3000, pulseWidth: 0,   volume: 255, filterCutoff: 150 },
+    { delaySamples: ms(6),   waveform: PULSE, freqHz: 400,  pulseWidth: 128, volume: 255, filterCutoff: 255 },
+    { delaySamples: ms(8),   waveform: PULSE, freqHz: 260,  pulseWidth: 128, volume: 180, filterCutoff: 255 },
+    { delaySamples: ms(8),   waveform: PULSE, freqHz: 160,  pulseWidth: 128, volume: 60,  filterCutoff: 255 },
+    { delaySamples: ms(4),   waveform: OFF,   freqHz: 0,    pulseWidth: 0,   volume: 0,   filterCutoff: 0 },
+  ],
 ];

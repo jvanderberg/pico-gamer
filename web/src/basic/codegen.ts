@@ -96,6 +96,8 @@ const BUILTIN_CONSTS: Record<string, number> = {
   SFX_CLICK: 13,
   SFX_WHOOSH: 14,
   SFX_BLIP: 15,
+  SFX_CHOMP_A: 16,
+  SFX_CHOMP_B: 17,
 };
 
 const NOTE_NAMES = ["C", "CS", "D", "DS", "E", "F", "FS", "G", "GS", "A", "AS", "B"];
