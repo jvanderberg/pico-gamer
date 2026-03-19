@@ -87,7 +87,7 @@ static bool aabbOverlap(int32_t ax, int32_t ay, int32_t aw, int32_t ah,
 static void applyCollisionMode(int mode, Sprite& spr,
                                 int32_t overlapLeft, int32_t overlapRight,
                                 int32_t overlapTop, int32_t overlapBottom) {
-    if (mode == 1) return; // detect-only
+    if (mode == COLL_DETECT) return;
 
     int32_t minX = (overlapLeft < overlapRight) ? overlapLeft : overlapRight;
     int32_t minY = (overlapTop < overlapBottom) ? overlapTop : overlapBottom;
@@ -100,9 +100,9 @@ static void applyCollisionMode(int mode, Sprite& spr,
             spr.x_fp += overlapRight;
         }
         switch (mode) {
-            case 2: spr.vx = -spr.vx; break;    // bounce
-            case 3: spr.active = false; break;    // destroy
-            case 4: spr.vx = 0; break;           // stop
+            case COLL_BOUNCE:  spr.vx = -spr.vx; break;
+            case COLL_DESTROY: spr.active = false; break;
+            case COLL_STOP:    spr.vx = 0; break;
         }
     } else {
         // Resolve on Y axis
@@ -112,9 +112,9 @@ static void applyCollisionMode(int mode, Sprite& spr,
             spr.y_fp += overlapBottom;
         }
         switch (mode) {
-            case 2: spr.vy = -spr.vy; break;
-            case 3: spr.active = false; break;
-            case 4: spr.vy = 0; break;
+            case COLL_BOUNCE:  spr.vy = -spr.vy; break;
+            case COLL_DESTROY: spr.active = false; break;
+            case COLL_STOP:    spr.vy = 0; break;
         }
     }
 }
@@ -126,54 +126,54 @@ static void applyEdgeBehavior(Sprite& spr, int16_t world_w, int16_t world_h) {
     int32_t sh = (int32_t)world_h << FP_SHIFT;
 
     switch (spr.edge) {
-        case 1: { // wrap
+        case EDGE_WRAP: {
             spr.x_fp = ((spr.x_fp % sw) + sw) % sw;
             spr.y_fp = ((spr.y_fp % sh) + sh) % sh;
             break;
         }
 
-        case 2: { // bounce
+        case EDGE_BOUNCE: {
             int32_t maxX = ((int32_t)(world_w - spr.width)) << FP_SHIFT;
             int32_t maxY = ((int32_t)(world_h - spr.height)) << FP_SHIFT;
             if (spr.x_fp <= 0) {
                 spr.x_fp = 0;
                 spr.vx = (spr.vx < 0) ? -spr.vx : spr.vx;
-                spr.hitFlags |= 1;
+                spr.hitFlags |= HIT_BORDER;
             } else if (spr.x_fp >= maxX) {
                 spr.x_fp = maxX;
                 spr.vx = (spr.vx > 0) ? -spr.vx : spr.vx;
-                spr.hitFlags |= 1;
+                spr.hitFlags |= HIT_BORDER;
             }
             if (spr.y_fp <= 0) {
                 spr.y_fp = 0;
                 spr.vy = (spr.vy < 0) ? -spr.vy : spr.vy;
-                spr.hitFlags |= 1;
+                spr.hitFlags |= HIT_BORDER;
             } else if (spr.y_fp >= maxY) {
                 spr.y_fp = maxY;
                 spr.vy = (spr.vy > 0) ? -spr.vy : spr.vy;
-                spr.hitFlags |= 1;
+                spr.hitFlags |= HIT_BORDER;
             }
             break;
         }
 
-        case 3: { // destroy — when fully off world
+        case EDGE_DESTROY: {
             int32_t nw = -((int32_t)spr.width << FP_SHIFT);
             int32_t nh = -((int32_t)spr.height << FP_SHIFT);
             if (spr.x_fp <= nw || spr.x_fp >= sw ||
                 spr.y_fp <= nh || spr.y_fp >= sh) {
                 spr.active = false;
-                spr.hitFlags |= 1;
+                spr.hitFlags |= HIT_BORDER;
             }
             break;
         }
 
-        case 4: { // stop
+        case EDGE_STOP: {
             int32_t maxX = ((int32_t)(world_w - spr.width)) << FP_SHIFT;
             int32_t maxY = ((int32_t)(world_h - spr.height)) << FP_SHIFT;
-            if (spr.x_fp <= 0) { spr.x_fp = 0; spr.vx = 0; spr.hitFlags |= 1; }
-            else if (spr.x_fp >= maxX) { spr.x_fp = maxX; spr.vx = 0; spr.hitFlags |= 1; }
-            if (spr.y_fp <= 0) { spr.y_fp = 0; spr.vy = 0; spr.hitFlags |= 1; }
-            else if (spr.y_fp >= maxY) { spr.y_fp = maxY; spr.vy = 0; spr.hitFlags |= 1; }
+            if (spr.x_fp <= 0) { spr.x_fp = 0; spr.vx = 0; spr.hitFlags |= HIT_BORDER; }
+            else if (spr.x_fp >= maxX) { spr.x_fp = maxX; spr.vx = 0; spr.hitFlags |= HIT_BORDER; }
+            if (spr.y_fp <= 0) { spr.y_fp = 0; spr.vy = 0; spr.hitFlags |= HIT_BORDER; }
+            else if (spr.y_fp >= maxY) { spr.y_fp = maxY; spr.vy = 0; spr.hitFlags |= HIT_BORDER; }
             break;
         }
     }
@@ -312,7 +312,10 @@ static bool rasterizeVectorSprite(const Sprite& spr, const uint8_t* mem,
     if (bufBytes <= 0 || bufBytes > VEC_BUF_SIZE) return false;
     memset(buf, 0, bufBytes);
 
-    uint8_t n = mem[spr.addr];
+    uint8_t n = mem[spr.addr & 0xFFFF];
+    // Limit line count to prevent reading past valid memory
+    int maxLines = (0x10000 - ((spr.addr + 1) & 0xFFFF)) / 4;
+    if (n > maxLines) n = (uint8_t)maxLines;
     int angle = (int)((spr.angle_fp >> FP_SHIFT) & 0xFF);
     int cosA = cos256(angle);
     int sinA = sin256(angle);
@@ -320,11 +323,11 @@ static bool rasterizeVectorSprite(const Sprite& spr, const uint8_t* mem,
     int cy = (int)(spr.y_fp >> FP_SHIFT) + (spr.height >> 1);
 
     for (int i = 0; i < n; i++) {
-        int base = spr.addr + 1 + i * 4;
+        uint16_t base = (uint16_t)(spr.addr + 1 + i * 4);
         int16_t rx1 = decode44(mem[base]);
-        int16_t ry1 = decode44(mem[base + 1]);
-        int16_t rx2 = decode44(mem[base + 2]);
-        int16_t ry2 = decode44(mem[base + 3]);
+        int16_t ry1 = decode44(mem[(uint16_t)(base + 1)]);
+        int16_t rx2 = decode44(mem[(uint16_t)(base + 2)]);
+        int16_t ry2 = decode44(mem[(uint16_t)(base + 3)]);
 
         int sx1 = cx + ((rx1 * cosA - ry1 * sinA) >> 16);
         int sy1 = cy + ((rx1 * sinA + ry1 * cosA) >> 16);
@@ -381,8 +384,8 @@ static bool pixelOverlap(const Sprite& a, const Sprite& b, const uint8_t* mem) {
 
     if (ix0 >= ix1 || iy0 >= iy1) return false;
 
-    bool aVec = (a.flags & 4) != 0;
-    bool bVec = (b.flags & 4) != 0;
+    bool aVec = (a.flags & SPRITE_FLAG_VECTOR) != 0;
+    bool bVec = (b.flags & SPRITE_FLAG_VECTOR) != 0;
 
     // Rasterize vector sprites to scratch buffers.
     // If buffer overflows (huge sprite), conservatively assume collision.
@@ -415,7 +418,10 @@ static bool pixelOverlap(const Sprite& a, const Sprite& b, const uint8_t* mem) {
 
 static void drawVectorSprite(Framebuffer& fb, const Sprite& spr, const uint8_t* mem,
                              int16_t cam_x = 0, int16_t cam_y = 0) {
-    uint8_t n = mem[spr.addr];
+    uint8_t n = mem[spr.addr & 0xFFFF];
+    // Limit line count to prevent reading past valid memory
+    int maxLines = (0x10000 - ((spr.addr + 1) & 0xFFFF)) / 4;
+    if (n > maxLines) n = (uint8_t)maxLines;
     int angle = (int)((spr.angle_fp >> FP_SHIFT) & 0xFF);
     int cosA = cos256(angle);
     int sinA = sin256(angle);
@@ -423,11 +429,11 @@ static void drawVectorSprite(Framebuffer& fb, const Sprite& spr, const uint8_t* 
     int cy = (int)(spr.y_fp >> FP_SHIFT) + (spr.height >> 1) - cam_y;
 
     for (int i = 0; i < n; i++) {
-        int base = spr.addr + 1 + i * 4;
+        uint16_t base = (uint16_t)(spr.addr + 1 + i * 4);
         int16_t rx1 = decode44(mem[base]);
-        int16_t ry1 = decode44(mem[base + 1]);
-        int16_t rx2 = decode44(mem[base + 2]);
-        int16_t ry2 = decode44(mem[base + 3]);
+        int16_t ry1 = decode44(mem[(uint16_t)(base + 1)]);
+        int16_t rx2 = decode44(mem[(uint16_t)(base + 2)]);
+        int16_t ry2 = decode44(mem[(uint16_t)(base + 3)]);
 
         int sx1 = cx + ((rx1 * cosA - ry1 * sinA) >> 16);
         int sy1 = cy + ((rx1 * sinA + ry1 * cosA) >> 16);
@@ -493,7 +499,7 @@ void updateSprites(SpriteTable& table, WallTable& walls, int32_t scale_fp, uint8
             int32_t overlapBottom= (wallY_fp + wallH_fp) - spr.y_fp;
 
             applyCollisionMode(spr.wallMode, spr, overlapLeft, overlapRight, overlapTop, overlapBottom);
-            spr.hitFlags |= 2;
+            spr.hitFlags |= HIT_WALL;
             spr.hitIndex = (uint8_t)wi;
             if (!spr.active) break;
 
@@ -521,8 +527,8 @@ void updateSprites(SpriteTable& table, WallTable& walls, int32_t scale_fp, uint8
 
             bool aRot = ((a.angle_fp >> FP_SHIFT) & 0xFF) != 0;
             bool bRot = ((b.angle_fp >> FP_SHIFT) & 0xFF) != 0;
-            bool aVec = (a.flags & 4) != 0;
-            bool bVec = (b.flags & 4) != 0;
+            bool aVec = (a.flags & SPRITE_FLAG_VECTOR) != 0;
+            bool bVec = (b.flags & SPRITE_FLAG_VECTOR) != 0;
 
             if (aRot || bRot || aVec || bVec) {
                 BBox ba = sprBBox(a);
@@ -547,12 +553,12 @@ void updateSprites(SpriteTable& table, WallTable& walls, int32_t scale_fp, uint8
 
             if (a.spriteMode != 0) {
                 applyCollisionMode(a.spriteMode, a, overlapLeft, overlapRight, overlapTop, overlapBottom);
-                a.hitFlags |= 4;
+                a.hitFlags |= HIT_SPRITE;
                 a.hitIndex = (uint8_t)j;
             }
             if (b.spriteMode != 0) {
                 applyCollisionMode(b.spriteMode, b, overlapRight, overlapLeft, overlapBottom, overlapTop);
-                b.hitFlags |= 4;
+                b.hitFlags |= HIT_SPRITE;
                 b.hitIndex = (uint8_t)i;
             }
         }
@@ -648,7 +654,8 @@ void drawTileMap(const TileMap& tm, const uint8_t* mem, Framebuffer& fb,
 
     for (int r = startRow; r < endRow; r++) {
         for (int c = startCol; c < endCol; c++) {
-            uint8_t tileIdx = mem[tm.mapAddr + r * tm.mapW + c];
+            uint16_t mapOff = (uint16_t)(tm.mapAddr + r * tm.mapW + c);
+            uint8_t tileIdx = mem[mapOff];
             if (tileIdx == 0 || tileIdx >= tm.tileCount) continue;
 
             // Animated tile: alternate with next tile index
@@ -659,7 +666,8 @@ void drawTileMap(const TileMap& tm, const uint8_t* mem, Framebuffer& fb,
 
             int screenX = c * TILE_SIZE - cam_x;
             int screenY = r * TILE_SIZE - cam_y;
-            const uint8_t* tileData = mem + tm.tilesetAddr + tileIdx * TILE_BYTES;
+            uint16_t tileOff = (uint16_t)(tm.tilesetAddr + tileIdx * TILE_BYTES);
+            const uint8_t* tileData = mem + tileOff;
             blit(fb, tileData, screenX, screenY, TILE_SIZE, TILE_SIZE);
         }
     }
@@ -692,7 +700,8 @@ void resolveTileCollisions(SpriteTable& table, const TileMap& tm, const uint8_t*
         for (int r = tt; r <= tb; r++) {
             for (int c = tl; c <= tr; c++) {
                 if (c < 0 || c >= tm.mapW || r < 0 || r >= tm.mapH) continue;
-                uint8_t tileIdx = mem[tm.mapAddr + r * tm.mapW + c];
+                uint16_t tileMapOff = (uint16_t)(tm.mapAddr + r * tm.mapW + c);
+                uint8_t tileIdx = mem[tileMapOff];
                 if (tileIdx == 0 || tileIdx >= MAX_TILE_TYPES) continue;
                 if (!(tm.props[tileIdx] & TILE_SOLID)) continue;
 
@@ -713,7 +722,7 @@ void resolveTileCollisions(SpriteTable& table, const TileMap& tm, const uint8_t*
                 applyCollisionMode(spr.wallMode, spr,
                                    overlapLeft, overlapRight,
                                    overlapTop, overlapBottom);
-                spr.hitFlags |= 2;
+                spr.hitFlags |= HIT_WALL;
                 collided = true;
                 if (!spr.active) break;
             }
@@ -749,7 +758,7 @@ void drawSprites(const SpriteTable& table, const uint8_t* mem, Framebuffer& fb,
         const Sprite& spr = table.sprites[i];
         if (!spr.active || !spr.visible) continue;
 
-        if (spr.flags & 4) {
+        if (spr.flags & SPRITE_FLAG_VECTOR) {
             drawVectorSprite(fb, spr, mem, cam_x, cam_y);
             continue;
         }

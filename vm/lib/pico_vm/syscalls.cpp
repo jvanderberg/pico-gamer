@@ -162,7 +162,8 @@ void handleSyscall(uint8_t id, VMState& vm, void* ctxPtr) {
             uint16_t col = pop(vm);
             if (ctx.tilemap && ctx.tilemap->active &&
                 col < ctx.tilemap->mapW && row < ctx.tilemap->mapH) {
-                vm.memory[ctx.tilemap->mapAddr + row * ctx.tilemap->mapW + col] = (uint8_t)tileIdx;
+                uint16_t off = (uint16_t)(ctx.tilemap->mapAddr + row * ctx.tilemap->mapW + col);
+                vm.memory[off] = (uint8_t)tileIdx;
             }
             break;
         }
@@ -172,7 +173,8 @@ void handleSyscall(uint8_t id, VMState& vm, void* ctxPtr) {
             uint16_t col = pop(vm);
             if (ctx.tilemap && ctx.tilemap->active &&
                 col < ctx.tilemap->mapW && row < ctx.tilemap->mapH) {
-                push(vm, vm.memory[ctx.tilemap->mapAddr + row * ctx.tilemap->mapW + col]);
+                uint16_t off = (uint16_t)(ctx.tilemap->mapAddr + row * ctx.tilemap->mapW + col);
+                push(vm, vm.memory[off]);
             } else {
                 push(vm, 0);
             }
@@ -511,8 +513,8 @@ void handleSyscall(uint8_t id, VMState& vm, void* ctxPtr) {
             uint16_t x    = pop(vm);
             uint16_t slot = pop(vm);
             if (ctx.particles && slot < MAX_EMITTERS) {
-                ctx.particles->emitters[slot].x_fp = (int16_t)((int16_t)x << 8);
-                ctx.particles->emitters[slot].y_fp = (int16_t)((int16_t)y << 8);
+                ctx.particles->emitters[slot].x_fp = ((int16_t)x) << 8;
+                ctx.particles->emitters[slot].y_fp = ((int16_t)y) << 8;
             }
             break;
         }

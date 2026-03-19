@@ -401,16 +401,17 @@ Syscalls that return a value push the result onto the stack before returning. Sy
 | `0x27` | ASHR | pop bits, pop value | `[value, bits] -> [result]` | Arithmetic (signed) right shift. Interprets `value` as signed i16, shifts right by `bits`, result masked to 16 bits. Sign bit is preserved. |
 | `0x28` | FX_MUL | pop q, pop b, pop a | `[a, b, q] -> [result]` | Fixed-point multiply. Interprets `a` and `b` as signed i16, computes `(a * b) >> q`, result masked to 16 bits. `q` is the number of fractional bits. |
 
-#### 5.4.3 Tile Syscalls (Stubs)
+#### 5.4.3 Tile Map Syscalls
 
-These are defined but currently stubbed — they pop one argument and discard it:
+The tile map system provides an 8×8-pixel tile-based world with per-tile properties, animation, and collision.
 
-| ID | Name | Stack Effect | Description |
-|----|------|-------------|-------------|
-| `0x07` | TILESET | `[arg] -> []` | Stub. |
-| `0x08` | TILEMAP | `[arg] -> []` | Stub. |
-| `0x09` | SCROLL | `[arg] -> []` | Stub. |
-| `0x0A` | SPRITE_OVER | `[arg] -> []` | Stub. |
+| ID | Name | Args (pop order) | Stack Effect | Description |
+|----|------|-------------------|-------------|-------------|
+| `0x07` | TILESET | pop count, pop addr | `[addr, count] -> []` | Sets the tileset bitmap base address and tile count. Each tile is 8 bytes (8×8 1-bit bitmap). |
+| `0x08` | TILEMAP | pop h, pop w, pop addr | `[addr, w, h] -> []` | Sets the map data address, width, and height (in tiles). Activates the tilemap. Also sets the viewport world size to `w*8 × h*8` pixels. |
+| `0x09` | TILE_PROP | pop flags, pop tileIdx | `[tileIdx, flags] -> []` | Sets property flags for a tile index. Flags: bit 0 = SOLID (collides with sprites), bit 1 = ANIM (alternates with next tile index). Max 32 tile types. |
+| `0x0A` | TILE_SET | pop tileIdx, pop row, pop col | `[col, row, tileIdx] -> []` | Sets the tile at map position (col, row) to `tileIdx`. |
+| `0x0B` | TILE_GET | pop row, pop col | `[col, row] -> [tileIdx]` | Returns the tile index at map position (col, row). Returns 0 if out of bounds. |
 
 #### 5.4.4 Sprite Engine Syscalls
 
@@ -435,13 +436,60 @@ The sprite engine manages up to 32 sprite slots (indices 0–31) and 16 wall slo
 | `0x4E` | SPR_GETROT | pop slot | `[slot] -> [angle]` | Returns current rotation angle (0–255), masked to 8 bits. Returns 0 if inactive. |
 | `0x4F` | SPR_VIS | pop visible, pop slot | `[slot, visible] -> []` | Sets sprite visibility. 0=invisible, nonzero=visible. Invisible sprites still participate in collisions but are not drawn. |
 
-#### 5.4.5 Audio Syscalls (Stubs)
+#### 5.4.5 Sprite Animation & Direction Syscalls
 
-Syscall IDs `0x30`–`0x3F` are reserved for audio. They are currently NOPs — the handler silently ignores them without popping any arguments.
+| ID | Name | Args (pop order) | Stack Effect | Description |
+|----|------|-------------------|-------------|-------------|
+| `0x55` | SPR_IMG | pop addr, pop slot | `[slot, addr] -> []` | Changes the sprite's bitmap address (e.g., for manual frame changes). |
+| `0x56` | SPR_ANIM | pop rate, pop count, pop addr, pop slot | `[slot, addr, count, rate] -> []` | Sets up frame animation. `addr` = base address of first frame, `count` = number of frames, `rate` = game frames per animation step. |
+| `0x57` | SPR_DIR | pop speed, pop dir, pop slot | `[slot, dir, speed] -> []` | Sets sprite velocity by cardinal direction. `dir`: 0=right, 1=down, 2=left, 3=up. `speed` is signed. |
 
-#### 5.4.6 Unknown Syscalls
+#### 5.4.6 Audio Syscalls
 
-Any syscall ID not listed above logs a warning and does nothing (no stack effect).
+6-voice SID-style synthesizer. See [AUDIO-DESIGN.md](AUDIO-DESIGN.md) for the synthesis model. Commands are buffered (max 32 per frame) and drained by the audio engine after YIELD.
+
+| ID | Name | Args (pop order) | Stack Effect | Description |
+|----|------|-------------------|-------------|-------------|
+| `0x30` | VOICE | pop pw, pop freq, pop wave, pop voice | `[voice, wave, freq, pw] -> []` | Configures a voice: waveform (0=off, 1=pulse, 2=saw, 3=tri, 4=noise), frequency in Hz, pulse width (0–255). |
+| `0x31` | ENVELOPE | pop r, pop s, pop d, pop a, pop voice | `[voice, a, d, s, r] -> []` | Sets ADSR envelope for a voice. Values in ms (A/D/R) and level (S, 0–255). |
+| `0x32` | NOTE_OFF | pop voice | `[voice] -> []` | Triggers release phase for a voice. |
+| `0x33` | FILTER | pop mode, pop reso, pop cutoff | `[cutoff, reso, mode] -> []` | Sets global filter. Mode: 0=LP, 1=BP, 2=HP, 3=notch, 4=comb. |
+| `0x34` | VOLUME | pop vol | `[vol] -> []` | Sets master volume (0–255). |
+| `0x35` | TONE | pop dur, pop freq, pop voice | `[voice, freq, dur] -> []` | Plays a tone on a voice for `dur` frames, then releases. |
+| `0x36` | SFX | pop voice, pop effectId | `[effectId, voice] -> []` | Plays a built-in or user-defined SFX preset on a voice. |
+| `0x37` | VFILTER | pop mode, pop reso, pop cutoff, pop voice | `[voice, cutoff, reso, mode] -> []` | Sets per-voice filter. |
+| `0x38` | NOTE | pop depth, pop rate, pop pitch, pop voice, pop effect | `[effect, voice, pitch, rate, depth] -> []` | Plays a note with an effect envelope, MIDI pitch, and optional vibrato (rate in 64ths of Hz, depth in cents). |
+| `0x39` | VDRIVE | pop amount, pop voice | `[voice, amount] -> []` | Sets per-voice overdrive/distortion amount. |
+| `0x3A` | MPLAY | pop song | `[song] -> []` | Starts playing a song (address of song data in VM memory). |
+| `0x3B` | MSTOP | (none) | `[] -> []` | Stops the currently playing song. |
+
+#### 5.4.7 Particle Syscalls
+
+4 emitter slots, up to 128 particles. Particles are 1-bit dots (or 2×2) with velocity, gravity, and lifetime.
+
+| ID | Name | Args (pop order) | Stack Effect | Description |
+|----|------|-------------------|-------------|-------------|
+| `0x50` | PFX_SET | pop flags, pop grav, pop dir, pop spread, pop life, pop speed, pop slot | `[slot, speed, life, spread, dir, grav, flags] -> []` | Configures an emitter. `flags`: bit 2=2×2 pixels, bit 3=black, bit 4=speed variance, bit 5=life variance. |
+| `0x51` | PFX_POS | pop y, pop x, pop slot | `[slot, x, y] -> []` | Sets emitter position. |
+| `0x52` | PFX_BURST | pop count, pop slot | `[slot, count] -> []` | Spawns `count` particles from emitter immediately. |
+| `0x53` | PFX_ON | pop rate, pop slot | `[slot, rate] -> []` | Sets continuous emission rate (particles per frame). 0 = off. |
+| `0x54` | PFX_CLEAR | pop slot | `[slot] -> []` | Clears all particles from an emitter (255 = clear all). |
+
+#### 5.4.8 Camera / Viewport Syscalls
+
+The camera system supports worlds larger than the 128×64 screen. Drawing syscalls (PIXEL, LINE, RECT, SPRITE, BLIT, TEXT) automatically offset by the camera position unless HUD mode is enabled.
+
+| ID | Name | Args (pop order) | Stack Effect | Description |
+|----|------|-------------------|-------------|-------------|
+| `0x60` | CAM_WORLD | pop h, pop w | `[w, h] -> []` | Sets the world size in pixels. |
+| `0x61` | CAM_MODE | pop slot, pop mode | `[mode, slot] -> []` | Sets camera mode: 0=none, 1=follow sprite `slot`, 2=manual. |
+| `0x62` | CAM_POS | pop y, pop x | `[x, y] -> []` | Sets camera position directly (mode 2). |
+| `0x63` | CAM_GET | (none) | `[] -> [x, y]` | Returns current camera position. Pushes x, then y. |
+| `0x64` | CAM_HUD | pop flag | `[flag] -> []` | Enables/disables HUD mode. When enabled (flag != 0), drawing syscalls ignore camera offset. |
+
+#### 5.4.9 Unknown Syscalls
+
+Any syscall ID not listed above is silently ignored (no stack effect).
 
 ### 5.5 Input Bitfield
 

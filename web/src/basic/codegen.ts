@@ -823,6 +823,9 @@ function emitDim(
 ): void {
   const upper = stmt.name.toUpperCase();
   const byteCount = stmt.size * 2;
+  if (s.nextVarAddr + byteCount > 0x10000) {
+    throw new Error(`DIM ${stmt.name}(${stmt.size}) exceeds available memory`);
+  }
   const addr = s.nextVarAddr;
   s.arrays.set(upper, { addr, size: stmt.size });
   s.nextVarAddr += byteCount;
@@ -961,8 +964,13 @@ function emitSubCall(
   stmt: { name: string; args: Expr[] },
 ): void {
   const params = s.subParams.get(stmt.name.toUpperCase());
+  if (params && params.length !== stmt.args.length) {
+    throw new Error(
+      `SUB ${stmt.name} expects ${params.length} argument(s), got ${stmt.args.length}`,
+    );
+  }
   if (params && stmt.args.length > 0) {
-    for (let i = 0; i < Math.min(stmt.args.length, params.length); i++) {
+    for (let i = 0; i < params.length; i++) {
       emitExpr(s, stmt.args[i]!);
       const addr = varAddr(s, params[i]!);
       emit(s, `  STORE ${addr}`);

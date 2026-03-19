@@ -17,6 +17,30 @@ static const int CALLBACK_CYCLE_BUDGET = 5000;
 static const int FP_SHIFT = 8;
 static const int FP_SCALE = (1 << FP_SHIFT); // 256
 
+// Sprite flag bits
+static const uint8_t SPRITE_FLAG_FLIPX  = 1;
+static const uint8_t SPRITE_FLAG_FLIPY  = 2;
+static const uint8_t SPRITE_FLAG_VECTOR = 4;
+
+// Edge behavior modes
+static const uint8_t EDGE_NONE    = 0;
+static const uint8_t EDGE_WRAP    = 1;
+static const uint8_t EDGE_BOUNCE  = 2;
+static const uint8_t EDGE_DESTROY = 3;
+static const uint8_t EDGE_STOP    = 4;
+
+// Collision modes (wallMode / spriteMode)
+static const uint8_t COLL_NONE    = 0;
+static const uint8_t COLL_DETECT  = 1;
+static const uint8_t COLL_BOUNCE  = 2;
+static const uint8_t COLL_DESTROY = 3;
+static const uint8_t COLL_STOP    = 4;
+
+// Hit flag bits
+static const uint8_t HIT_BORDER = 1;
+static const uint8_t HIT_WALL   = 2;
+static const uint8_t HIT_SPRITE = 4;
+
 struct Sprite {
     bool     active;
     uint16_t addr;

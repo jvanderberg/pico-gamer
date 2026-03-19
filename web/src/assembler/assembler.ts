@@ -54,7 +54,7 @@ function parseLine(raw: string): ParsedLine {
   // Directive: .org
   if (line.startsWith(".org ") || line.startsWith(".ORG ")) {
     const addr = parseInt(line.slice(5).trim(), 0);
-    if (isNaN(addr)) throw new Error(`Invalid .org address`);
+    if (isNaN(addr) || addr < 0 || addr > 0xFFFF) throw new Error(`Invalid .org address: must be 0-65535`);
     return { kind: "org", address: addr };
   }
 

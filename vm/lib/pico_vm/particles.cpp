@@ -3,6 +3,19 @@
 #include "sin_table.h"
 #include "syscalls.h"  // for xorshift16
 
+static void resetEmitter(Emitter& e) {
+    e.x_fp = 0;
+    e.y_fp = 0;
+    e.speed = 0;
+    e.life = 0;
+    e.spread = 0;
+    e.direction = 0;
+    e.gravity = 0;
+    e.rate = 0;
+    e.flags = 0;
+    e._pad = 0;
+}
+
 ParticleTable createParticleTable() {
     ParticleTable table;
     resetParticleTable(table);
@@ -11,17 +24,7 @@ ParticleTable createParticleTable() {
 
 void resetParticleTable(ParticleTable& table) {
     for (int i = 0; i < MAX_EMITTERS; i++) {
-        Emitter& e = table.emitters[i];
-        e.x_fp = 0;
-        e.y_fp = 0;
-        e.speed = 0;
-        e.life = 0;
-        e.spread = 0;
-        e.direction = 0;
-        e.gravity = 0;
-        e.rate = 0;
-        e.flags = 0;
-        e._pad = 0;
+        resetEmitter(table.emitters[i]);
     }
     for (int i = 0; i < MAX_PARTICLES; i++) {
         table.particles[i].life = 0;
@@ -163,17 +166,7 @@ void clearParticles(ParticleTable& table, int slot) {
     }
     if (slot < 0 || slot >= MAX_EMITTERS) return;
 
-    // Reset this emitter
-    Emitter& e = table.emitters[slot];
-    e.x_fp = 0;
-    e.y_fp = 0;
-    e.speed = 0;
-    e.life = 0;
-    e.spread = 0;
-    e.direction = 0;
-    e.gravity = 0;
-    e.rate = 0;
-    e.flags = 0;
+    resetEmitter(table.emitters[slot]);
 
     // Kill particles belonging to this emitter
     uint8_t emitterBits = (uint8_t)((slot & 0x03) << 6);

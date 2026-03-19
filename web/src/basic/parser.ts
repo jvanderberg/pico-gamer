@@ -736,7 +736,15 @@ function advance(): Token {
     if (isError(sizeTok)) return sizeTok;
     const rp = expect(TokenType.RParen, "')'");
     if (isError(rp)) return rp;
-    return { kind: "dim", name: nameTok.value, size: parseInt(sizeTok.value, 0) };
+    const size = parseInt(sizeTok.value, 0);
+    if (isNaN(size) || size <= 0 || size > 65535) {
+      return {
+        line: sizeTok.line,
+        col: sizeTok.col,
+        message: `DIM size must be between 1 and 65535, got ${sizeTok.value}`,
+      };
+    }
+    return { kind: "dim", name: nameTok.value, size };
   }
 
   function parseConst(): Stmt | ParseError {
@@ -815,7 +823,7 @@ function advance(): Token {
       filterCutoff: Expr | null;
     }[] = [];
 
-    while (!(peek() === TokenType.END && tokens[pos + 1]?.type === TokenType.EFFECT)) {
+    while (peek() !== TokenType.EOF && !(peek() === TokenType.END && tokens[pos + 1]?.type === TokenType.EFFECT)) {
       const stepTok = expect(TokenType.STEP, "STEP");
       if (isError(stepTok)) return stepTok;
 
@@ -894,7 +902,7 @@ function advance(): Token {
       pattern: Expr;
     }[] = [];
 
-    while (!(peek() === TokenType.END && tokens[pos + 1]?.type === TokenType.SONG)) {
+    while (peek() !== TokenType.EOF && !(peek() === TokenType.END && tokens[pos + 1]?.type === TokenType.SONG)) {
       const trackTok = expect(TokenType.TRACK, "TRACK");
       if (isError(trackTok)) return trackTok;
 

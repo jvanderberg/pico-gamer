@@ -17,7 +17,6 @@ enum Sys : uint8_t {
     SYS_YIELD      = 0x06,
     SYS_TILESET    = 0x07,
     SYS_TILEMAP    = 0x08,
-    SYS_SCROLL     = 0x09,
     SYS_TILE_PROP  = 0x09,
     SYS_TILE_SET   = 0x0A,
     SYS_TILE_GET   = 0x0B,
