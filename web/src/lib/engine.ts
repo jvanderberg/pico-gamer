@@ -371,6 +371,12 @@ export async function createEngine(
 
   function doAssemble(source: string): boolean {
     currentError = null;
+    // Stop any running program before assembling
+    running = false;
+    if (animFrame !== null) {
+      cancelAnimationFrame(animFrame);
+      animFrame = null;
+    }
     const result = assembleSource(source);
     if (typeof result === "string") {
       currentError = result;
@@ -379,6 +385,7 @@ export async function createEngine(
     }
     lastBytecode = result.bytecode;
     audio.reset();
+    vm.audioCommandClear();
     vm.reset();
     vm.loadProgram(result.bytecode);
     render();
@@ -499,6 +506,7 @@ export async function createEngine(
         animFrame = null;
       }
       audio.reset();
+      vm.audioCommandClear();
       vm.reset();
       if (lastBytecode) {
         vm.loadProgram(lastBytecode);
@@ -525,6 +533,7 @@ export async function createEngine(
       }
       lastBytecode = result.bytecode;
       audio.reset();
+      vm.audioCommandClear();
       vm.reset();
       vm.loadProgram(result.bytecode);
       render();

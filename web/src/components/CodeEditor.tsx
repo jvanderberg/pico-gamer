@@ -5,6 +5,7 @@ import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { terminalThemeExtension } from "../codemirror/theme.ts";
 import { basicLanguage } from "../codemirror/basic-language.ts";
 import { asmLanguage } from "../codemirror/asm-language.ts";
+import { basicLinter } from "../codemirror/basic-linter.ts";
 
 interface CodeEditorProps {
   value: string;
@@ -32,6 +33,7 @@ export function CodeEditor({ value, onChange, language }: CodeEditorProps) {
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap]),
           langExtension,
+          basicLinter,
           ...terminalThemeExtension,
           EditorView.updateListener.of((update) => {
             if (update.docChanged) {

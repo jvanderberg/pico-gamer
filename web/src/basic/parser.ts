@@ -480,6 +480,17 @@ function advance(): Token {
         return { kind: "assign", name, expr };
       }
 
+      // If next token is an identifier followed by '=', this looks like
+      // a typo in an assignment (e.g. "inp lj= INPUT()"), not a SUB call.
+      if (peek() === TokenType.Identifier && pos + 1 < tokens.length &&
+          tokens[pos + 1]!.type === TokenType.Eq) {
+        return {
+          line: tok.line,
+          col: tok.col,
+          message: `Unexpected identifier '${current().value}' after '${name}' — did you mean '${name} = ...'?`,
+        };
+      }
+
       // SUB call: name arg, arg, ...
       // If we get here and it's not an assignment, treat it as a SUB call
       pos--; // back up to re-read as SUB call

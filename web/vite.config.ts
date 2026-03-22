@@ -7,12 +7,14 @@ import path from "path";
 const devKeyPath = path.resolve(__dirname, ".cert/pico-gamer-main.local-key.pem");
 const devCertPath = path.resolve(__dirname, ".cert/pico-gamer-main.local.pem");
 const https =
-  fs.existsSync(devKeyPath) && fs.existsSync(devCertPath)
-    ? {
-        key: fs.readFileSync(devKeyPath),
-        cert: fs.readFileSync(devCertPath),
-      }
-    : undefined;
+  process.env.VITE_NO_HTTPS
+    ? undefined
+    : fs.existsSync(devKeyPath) && fs.existsSync(devCertPath)
+      ? {
+          key: fs.readFileSync(devKeyPath),
+          cert: fs.readFileSync(devCertPath),
+        }
+      : undefined;
 
 export default defineConfig({
   root: ".",

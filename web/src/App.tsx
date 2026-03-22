@@ -2,22 +2,39 @@ import { useState, useRef, useCallback, useEffect, type MouseEvent } from "react
 import { Header } from "./components/Header.tsx";
 import { EditorPanel } from "./components/EditorPanel.tsx";
 import { DisplayPanel } from "./components/DisplayPanel.tsx";
+import { MobileGameView } from "./components/MobileGameView.tsx";
 import { StatusBar } from "./components/StatusBar.tsx";
 import { useEngine } from "./hooks/useEngine.ts";
-import { DEMOS, detectLang } from "./lib/engine.ts";
+import { DEMOS, detectLang, SCREEN_W, SCREEN_H } from "./lib/engine.ts";
+
+function useIsMobile(): boolean {
+  const [mobile, setMobile] = useState(
+    () => window.matchMedia("(max-width: 768px)").matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 768px)");
+    const handler = (e: MediaQueryListEvent) => setMobile(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+  return mobile;
+}
 
 export function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const canvasWrapRef = useRef<HTMLDivElement>(null);
   const [source, setSource] = useState("");
   const [scale, setScale] = useState(4);
-  const [breakAtStart, setBreakAtStart] = useState(false);
+  const breakAtStart = false;
   const [selectedDemo, setSelectedDemo] = useState("");
   const [language, setLanguage] = useState<"asm" | "basic">("asm");
+  const isMobile = useIsMobile();
+  const [mobileShowEditor, setMobileShowEditor] = useState(false);
 
   const [editorWidth, setEditorWidth] = useState(50);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const { engineRef, status, stackText, error, loading } = useEngine(canvasRef, scale);
+  const { engineRef, status, error, loading } = useEngine(canvasRef, scale);
 
   const handleDividerMouseDown = useCallback(
     (e: MouseEvent) => {
@@ -59,7 +76,7 @@ export function App() {
       }
     }
     initDone.current = true;
-  }, [engineRef, loading]); // loading=false signals engine is ready
+  }, [engineRef, loading]);
 
   const handleSourceChange = useCallback((newSource: string) => {
     setSource(newSource);
@@ -76,6 +93,8 @@ export function App() {
       if (src) {
         setSource(src);
         setLanguage(detectLang(src));
+        engine.assemble(src);
+        engine.run(false);
       }
     },
     [engineRef],
@@ -86,7 +105,11 @@ export function App() {
       setSource(text);
       setLanguage(detectLang(text));
       setSelectedDemo("");
-      engineRef.current?.loadSource();
+      const engine = engineRef.current;
+      if (engine) {
+        engine.assemble(text);
+        engine.run(false);
+      }
     },
     [engineRef],
   );
@@ -99,34 +122,49 @@ export function App() {
     [engineRef],
   );
 
-  const handleAssemble = useCallback(() => {
-    engineRef.current?.assemble(source);
-  }, [engineRef, source]);
-
-  const handleRun = useCallback(() => {
-    // Auto-assemble if needed
+  const handleReset = useCallback(() => {
     engineRef.current?.assemble(source);
     engineRef.current?.run(breakAtStart);
   }, [engineRef, source, breakAtStart]);
 
-  const handleStop = useCallback(() => {
-    engineRef.current?.stop();
-  }, [engineRef]);
-
-  const handleStep = useCallback(() => {
-    engineRef.current?.step(source);
-  }, [engineRef, source]);
-
-  const handleReset = useCallback(() => {
-    engineRef.current?.reset();
-  }, [engineRef]);
-
-  const handleMemCommand = useCallback(
-    (cmd: string): string => {
-      return engineRef.current?.handleMemCommand(cmd) ?? "";
+  const handleMobileDemoChange = useCallback(
+    (value: string) => {
+      handleDemoChange(value);
+      setMobileShowEditor(false);
     },
-    [engineRef],
+    [handleDemoChange],
   );
+
+  // The canvas wrapper is always mounted so the engine keeps its reference.
+  // On mobile, MobileGameView reparents it into its game area.
+  const canvasEl = (
+    <div ref={canvasWrapRef}>
+      <canvas
+        ref={canvasRef}
+        width={SCREEN_W * scale}
+        height={SCREEN_H * scale}
+        className="border-2 border-[var(--border)] bg-black"
+        style={{ imageRendering: "pixelated" }}
+      />
+    </div>
+  );
+
+  if (isMobile && !mobileShowEditor) {
+    return (
+      <div className="font-mono text-[var(--foreground)] bg-[var(--background)]">
+        {/* Hidden portal source — MobileGameView will reparent it */}
+        <div style={{ display: "none" }}>{canvasEl}</div>
+        <MobileGameView
+          engine={engineRef.current}
+          demos={DEMOS}
+          selectedDemo={selectedDemo}
+          onDemoChange={handleMobileDemoChange}
+          onShowEditor={() => setMobileShowEditor(true)}
+          canvasPortalRef={canvasWrapRef}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-screen overflow-hidden font-mono text-[var(--foreground)] bg-[var(--background)]">
@@ -151,19 +189,19 @@ export function App() {
           engine={engineRef.current}
           scale={scale}
           onScaleChange={handleScaleChange}
-          breakAtStart={breakAtStart}
-          onBreakAtStartChange={setBreakAtStart}
           error={error}
-          stackText={stackText}
           fps={status.fps}
-          onAssemble={handleAssemble}
-          onRun={handleRun}
-          onStop={handleStop}
-          onStep={handleStep}
           onReset={handleReset}
-          onMemCommand={handleMemCommand}
         />
       </div>
+      {isMobile && (
+        <button
+          className="btn w-full py-2 text-sm"
+          onClick={() => setMobileShowEditor(false)}
+        >
+          Back to Game
+        </button>
+      )}
       <StatusBar status={status} />
     </div>
   );
