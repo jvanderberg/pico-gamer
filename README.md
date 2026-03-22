@@ -75,16 +75,49 @@ The web emulator runs the same C++ VM core compiled to WASM via Emscripten, so b
 | E / J | Encoder CCW |
 | Space / Tab | Encoder button |
 
-### Building the web emulator
+See [Building](#building) below for setup instructions.
 
-Requires [Emscripten](https://emscripten.org/docs/getting_started/downloads.html) and Node.js 20+.
+## Terminal runner
+
+Run `.bas` or `.game` files directly in the terminal. Renders the 128x64 framebuffer using Unicode half-block characters at full resolution (128 columns x 32 rows). Includes the same 6-voice synth via `node-web-audio-api`.
+
+```bash
+npx tsx terminal/pico-term.ts web/examples/muncher.bas
+npx tsx terminal/pico-term.ts --color green web/examples/asteroids.bas
+npx tsx terminal/pico-term.ts --no-audio web/examples/invaders.bas
+```
+
+Options:
+- `--color green|amber|cyan|white` -- display color (default: white)
+- `--no-audio` -- disable sound output
+
+Requires a terminal at least 128 columns wide. Audio uses `node-web-audio-api` (installed as part of `npm install` in `web/`); falls back to silent mode if unavailable.
+
+## Building
+
+### WASM VM
+
+Required before running the web or terminal emulator. **Rebuild after any changes to C++ under `vm/lib/`.**
+
+```bash
+source ~/emsdk/emsdk_env.sh   # if emcc is not already on PATH
+bash wasm/build.sh
+```
+
+### Web emulator
 
 ```bash
 cd web
 npm install
-npm test          # builds WASM + runs 197 tests
 npm run dev       # start dev server
 npm run build     # production build
+```
+
+### Tests
+
+```bash
+cd web && npm test           # WASM + compiler/assembler tests
+cd vm && pio test -e native  # native VM unit tests
 ```
 
 ## Project structure
@@ -98,21 +131,29 @@ wasm/              Emscripten build script and WASM bridge
 web/
   src/basic/       BASIC compiler (lexer, parser, codegen)
   src/assembler/   Two-pass bytecode assembler
+  src/audio/       6-voice synth (AudioWorklet, shared with terminal)
   src/wasm/        WASM VM bindings
   src/components/  React UI
   examples/        Demo BASIC programs
   test/            Test suite
+terminal/
+  pico-term.ts     Terminal game runner
+  synth-node.ts    Node.js wrapper for the synth processor
 ```
 
 ## Examples
 
 | Program | Description |
 |---------|-------------|
+| [muncher.bas](web/examples/muncher.bas) | Pac-Man clone with tilemap, ghost AI, and sound |
+| [invaders.bas](web/examples/invaders.bas) | Space Invaders with particle explosions |
 | [asteroids.bas](web/examples/asteroids.bas) | Full game with vector sprites, collision, scoring, wave progression |
-| [starfield.bas](web/examples/starfield.bas) | Parallax star field with bouncing balls, zero per-frame CPU |
-| [sprites.bas](web/examples/sprites.bas) | Collision groups and sprite interaction demo |
+| [kessler.bas](web/examples/kessler.bas) | Orbital debris dodging game |
+| [defender.bas](web/examples/defender.bas) | Side-scrolling shooter |
+| [dance-party.bas](web/examples/dance-party.bas) | Chiptune music demo |
+| [sfx-demo.bas](web/examples/sfx-demo.bas) | Sound effects showcase |
+| [starfield.bas](web/examples/starfield.bas) | Parallax star field with bouncing balls |
 | [bouncing-dot.bas](web/examples/bouncing-dot.bas) | Minimal example -- one sprite, 5 lines |
-| [input-test.bas](web/examples/input-test.bas) | Keyboard/joystick input handling |
 
 ## Documentation
 

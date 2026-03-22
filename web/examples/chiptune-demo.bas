@@ -83,11 +83,15 @@ SONG chorus_s, 138, 1
   TRACK 5, kick, 0, 0, "C2:4 R:4 C2:4 R:4 C2:4 R:4 C2:4 R:4 C2:4 R:4 C2:4 R:4 C2:4 R:4 C2:4 R:4 C2:4 R:4 C2:4 R:4 C2:4 R:4 C2:4 R:4 C2:4 R:4 C2:4 R:4 C2:4 R:4 C2:4 R:4"
 END SONG
 
-' ---- BRIDGE: just lead + pad, no bass, no drums ----
-' Sparse and clean. Lead plays only chord tones (root/3rd/5th).
+' ---- BRIDGE: Fm - Bb - Ab - G, builds to final chorus ----
+' Same rhythmic style as verse/chorus. Bass drops first 8 beats, returns light.
+' Lead melody steps through the new chords. G dominant at the end pulls to Cm.
 SONG bridge_s, 138, 0
-  TRACK 1, lead, 320, 8, "F4:16 C4:16 G3:16 DS4:16 DS4:16 C4:16 F4:16 D4:16"
-  TRACK 2, pad, 0, 0, "C3:16 GS2:16 DS3:16 G2:16 GS2:16 DS3:16 D3:16 F3:16"
+  TRACK 0, bass, 0, 0, "F1:4 F2:4 F1:4 F2:4 F1:4 F2:4 F1:4 F2:4 AS1:4 AS2:4 AS1:4 AS2:4 GS1:4 GS2:4 GS1:4 GS2:4 G1:4 G2:4 G1:4 G2:4 G1:4 G2:4 G1:4 G2:4"
+  TRACK 1, lead, 0, 8, "F4:4 GS4:4 C5:4 GS4:4 F4:4 DS4:4 F4:4 GS4:4 GS4:4 DS4:4 C4:4 DS4:4 G4:4 B3:4 D4:4 G4:4 G4:4 D4:4 B3:4 D4:4 F4:4 DS4:4 D4:4 G4:4 G4:2 AS4:2 G4:4 D4:4 G4:4 B3:4 D4:4 G4:4"
+  TRACK 3, arp, 0, 0, "F3:4 GS3:4 C4:4 GS3:4 F3:4 C4:4 GS3:4 F3:4 AS3:4 D4:4 F4:4 D4:4 GS3:4 C4:4 DS4:4 C4:4 G3:4 B3:4 D4:4 B3:4 G3:4 D4:4 B3:4 G3:4 G3:4 B3:4 D4:4 B3:4 G3:4 D4:4 B3:4 G3:4"
+  TRACK 4, hat, 0, 0, "R:4 C6:4 R:4 C6:4 R:4 C6:4 R:4 C6:4 C6:4 R:4 C6:4 C6:4 C6:4 R:4 C6:4 C6:4 C6:4 C6:4 C6:4 C6:4 C6:4 C6:4 C6:4 C6:4 C6:4 C6:4 C6:4 C6:4 C6:4 C6:4 C6:4 C6:4"
+  TRACK 5, kick, 0, 0, "R:4 R:4 C2:4 R:4 R:4 R:4 C2:4 R:4 C2:4 R:4 C2:4 R:4 C2:4 R:4 C2:4 R:4 C2:4 R:4 C2:4 R:4 C2:4 R:4 C2:4 R:4 C2:4 R:4 C2:4 R:4 C2:4 R:4 C2:4 R:4"
 END SONG
 
 ' ============ VOICE SETUP ============

@@ -3,6 +3,7 @@
 // Usage: npx tsx terminal/pico-term.ts [--color white] [--no-audio] <file.bas|file.game>
 
 import { readFileSync } from "fs";
+import { createRequire } from "module";
 import { resolve, extname } from "path";
 import { fileURLToPath } from "url";
 import createModule from "../web/src/wasm/pico-vm.mjs";
@@ -114,10 +115,15 @@ function loadBytecode(filePath: string): Uint8Array {
 }
 
 // ── Terminal input ──────────────────────────────────────────
-const RELEASE_MS = 150;
+// Terminals have no key-up events, so we simulate release with a timeout.
+// Single tap: short timeout so it doesn't ghost.
+// Held key: once OS repeat kicks in, extend the timeout to avoid stutter.
+const TAP_RELEASE_MS = 150;
+const HOLD_RELEASE_MS = 180;
 
 function bindTerminalInput(input: InputState) {
   const releaseTimers = new Map<number, ReturnType<typeof setTimeout>>();
+  const holdActive = new Set<number>();
 
   function keyDown(bit: number, isRepeat: boolean) {
     const wasDown = (input.bits & bit) !== 0;
@@ -133,6 +139,10 @@ function bindTerminalInput(input: InputState) {
       }
     }
 
+    // Second event while still held = OS repeat has started
+    if (wasDown) holdActive.add(bit);
+    const timeout = holdActive.has(bit) ? HOLD_RELEASE_MS : TAP_RELEASE_MS;
+
     const existing = releaseTimers.get(bit);
     if (existing) clearTimeout(existing);
     releaseTimers.set(bit, setTimeout(() => {
@@ -140,7 +150,8 @@ function bindTerminalInput(input: InputState) {
       if (bit === INPUT_ENC_CW) input.encHoldFramesCw = 0;
       else if (bit === INPUT_ENC_CCW) input.encHoldFramesCcw = 0;
       releaseTimers.delete(bit);
-    }, RELEASE_MS));
+      holdActive.delete(bit);
+    }, timeout));
   }
 
   process.stdin.on("data", (data: string) => {
@@ -171,7 +182,7 @@ function bindTerminalInput(input: InputState) {
 // ── Color presets ───────────────────────────────────────────
 const COLORS: Record<string, string> = {
   white:   "\x1b[97m",
-  green:   "\x1b[32m",
+  green:   "\x1b[38;2;50;255;50m",
   red:     "\x1b[31m",
   blue:    "\x1b[34m",
   cyan:    "\x1b[36m",
@@ -271,7 +282,9 @@ function readSongPayload(
 // ── Audio output via node-web-audio-api ─────────────────────
 async function initAudioOutput(synth: TerminalSynth): Promise<{ cleanup: () => void } | null> {
   try {
-    const { AudioContext, ScriptProcessorNode } = await import("node-web-audio-api");
+    // Resolve from web/ where node-web-audio-api is installed
+    const req = createRequire(new URL("../web/package.json", import.meta.url).href);
+    const { AudioContext, ScriptProcessorNode } = req("node-web-audio-api");
     const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
 
     // Use a ScriptProcessorNode to pull samples from the synth
@@ -290,7 +303,8 @@ async function initAudioOutput(synth: TerminalSynth): Promise<{ cleanup: () => v
         ctx.close();
       },
     };
-  } catch {
+  } catch (err) {
+    console.error("Audio init failed (install node-web-audio-api in web/):", (err as Error).message);
     return null;
   }
 }
@@ -414,7 +428,8 @@ async function main() {
     }
 
     const elapsed = (Date.now() - startTime) & 0xffff;
-    vmSetInput(consumeInputWord(input));
+    const inputWord = consumeInputWord(input);
+    vmSetInput(inputWord);
     vmSetElapsedMs(elapsed);
     vmExecFrame();
     drainAudioCommands();
@@ -434,9 +449,8 @@ async function main() {
     const pc = vmGetPC();
     const sp = vmGetSP();
     const cycles = vmGetCycles();
-    const inp = input.bits;
     const audioStr = audioOut ? "♪" : "mute";
-    out += `\x1b[${ROWS + 1};1H\x1b[2m\x1b[K ${Math.round(fps)}fps  PC:${pc.toString(16).padStart(4, "0")}  SP:${sp}  CYC:${cycles}  IN:${inp.toString(2).padStart(8, "0")}  ${audioStr}\x1b[22m`;
+    out += `\x1b[${ROWS + 1};1H\x1b[2m\x1b[K ${Math.round(fps)}fps  PC:${pc.toString(16).padStart(4, "0")}  SP:${sp}  CYC:${cycles}  IN:${inputWord.toString(2).padStart(8, "0")}  ${audioStr}\x1b[22m`;
     if (out.length > 0) process.stdout.write(out);
   }
 

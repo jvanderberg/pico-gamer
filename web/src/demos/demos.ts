@@ -8,6 +8,7 @@ import noteDemoBas from "../../examples/note-demo.bas?raw";
 import scene7ChiptuneBas from "../../examples/scene7-chiptune.bas?raw";
 import songDemoBas from "../../examples/song-demo.bas?raw";
 import starfieldBas from "../../examples/starfield.bas?raw";
+import zeldaOverworldBas from "../../examples/zelda-overworld.bas?raw";
 
 export interface Demo {
   name: string;
@@ -25,4 +26,5 @@ export const DEMOS: Demo[] = [
   { name: "Scene 7 Chiptune", source: scene7ChiptuneBas },
   { name: "Song Demo", source: songDemoBas },
   { name: "Starfield", source: starfieldBas },
+  { name: "Zelda Overworld", source: zeldaOverworldBas },
 ];

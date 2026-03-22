@@ -14,7 +14,7 @@ Pico Gamer is a handheld-style RP2040 game platform with:
 
 Games can run:
 
-- as VM bytecode (`.game`) on web and hardware
+- as VM bytecode (`.game`) on web, terminal, and hardware
 - as native binaries (`.bin`) on hardware
 
 ## Current Hardware Profile
@@ -64,6 +64,13 @@ The current firmware audio implementation is I2S. Older piezo/PWM notes are obso
   - assembler
   - React/Vite UI
   - `AudioWorklet` synth sink
+
+### Terminal
+
+- `terminal/`
+  - `pico-term.ts` — runs `.bas`/`.game` files in the terminal using Unicode half-block characters (128x32)
+  - `synth-node.ts` — Node.js shim that wraps the same `synth-processor.ts` for audio via `node-web-audio-api`
+  - same compiler, assembler, and WASM VM as the web emulator
 
 ## Audio Summary
 
@@ -117,6 +124,12 @@ The important current design choice is that music and sound effects share one en
 1. Compile the same source through the browser or CLI.
 2. Run it in the WASM VM.
 3. Hear the same synth model through the browser `AudioWorklet`.
+
+### Terminal
+
+1. `npx tsx terminal/pico-term.ts game.bas`
+2. Compiles BASIC, runs the same WASM VM, renders via Unicode half-block characters.
+3. Audio via `node-web-audio-api` (same synth processor as web).
 
 ## Native Games
 
