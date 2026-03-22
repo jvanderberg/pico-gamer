@@ -71,7 +71,9 @@ export async function loadWasmVM(): Promise<WasmVM> {
   } else {
     // Node.js (tests): read the .wasm binary from disk directly to avoid
     // emscripten's path.normalize() mangling file:// URLs (emcc 3.1.5 bug)
+    // @ts-expect-error — Node-only path, types not available in DOM tsconfig
     const { readFileSync } = await import("node:fs");
+    // @ts-expect-error — Node-only path, types not available in DOM tsconfig
     const { fileURLToPath } = await import("node:url");
     const wasmPath = fileURLToPath(new URL("pico-vm.wasm", import.meta.url));
     opts.wasmBinary = readFileSync(wasmPath);
