@@ -7,6 +7,25 @@ import { StatusBar } from "./components/StatusBar.tsx";
 import { useEngine } from "./hooks/useEngine.ts";
 import { DEMOS, detectLang, SCREEN_W, SCREEN_H } from "./lib/engine.ts";
 
+/** Single canvas element, portaled into whichever view is active. */
+function CanvasElement({
+  canvasRef,
+  scale,
+}: {
+  canvasRef: React.RefObject<HTMLCanvasElement | null>;
+  scale: number;
+}) {
+  return (
+    <canvas
+      ref={canvasRef}
+      width={SCREEN_W * scale}
+      height={SCREEN_H * scale}
+      className="border-2 border-[var(--border)] bg-black"
+      style={{ imageRendering: "pixelated" }}
+    />
+  );
+}
+
 function useIsMobile(): boolean {
   const [mobile, setMobile] = useState(
     () => window.matchMedia("(max-width: 768px)").matches,
@@ -127,6 +146,16 @@ export function App() {
     engineRef.current?.run(breakAtStart);
   }, [engineRef, source, breakAtStart]);
 
+  const toggleFullscreen = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      canvas.requestFullscreen();
+    }
+  }, []);
+
   const handleMobileDemoChange = useCallback(
     (value: string) => {
       handleDemoChange(value);
@@ -135,74 +164,64 @@ export function App() {
     [handleDemoChange],
   );
 
-  // The canvas wrapper is always mounted so the engine keeps its reference.
-  // On mobile, MobileGameView reparents it into its game area.
-  const canvasEl = (
-    <div ref={canvasWrapRef}>
-      <canvas
-        ref={canvasRef}
-        width={SCREEN_W * scale}
-        height={SCREEN_H * scale}
-        className="border-2 border-[var(--border)] bg-black"
-        style={{ imageRendering: "pixelated" }}
-      />
-    </div>
-  );
-
-  if (isMobile && !mobileShowEditor) {
-    return (
-      <div className="font-mono text-[var(--foreground)] bg-[var(--background)]">
-        {/* Hidden portal source — MobileGameView will reparent it */}
-        <div style={{ display: "none" }}>{canvasEl}</div>
-        <MobileGameView
-          engine={engineRef.current}
-          demos={DEMOS}
-          selectedDemo={selectedDemo}
-          onDemoChange={handleMobileDemoChange}
-          onShowEditor={() => setMobileShowEditor(true)}
-          canvasPortalRef={canvasWrapRef}
-        />
-      </div>
-    );
-  }
-
   return (
-    <div className="flex flex-col h-screen overflow-hidden font-mono text-[var(--foreground)] bg-[var(--background)]">
-      <Header />
-      <div ref={containerRef} className="flex flex-1 min-h-0">
-        <EditorPanel
-          source={source}
-          onSourceChange={handleSourceChange}
-          language={language}
-          demos={DEMOS}
-          selectedDemo={selectedDemo}
-          onDemoChange={handleDemoChange}
-          onLoadFile={handleLoadFile}
-          style={{ width: `${editorWidth}%` }}
-        />
-        <div
-          className="divider"
-          onMouseDown={handleDividerMouseDown}
-        />
-        <DisplayPanel
-          ref={canvasRef}
-          engine={engineRef.current}
-          scale={scale}
-          onScaleChange={handleScaleChange}
-          error={error}
-          fps={status.fps}
-          onReset={handleReset}
-        />
+    <>
+      {/* Single canvas element — portaled into whichever view is active */}
+      <div ref={canvasWrapRef} style={{ display: "none" }}>
+        <CanvasElement canvasRef={canvasRef} scale={scale} />
       </div>
-      {isMobile && (
-        <button
-          className="btn w-full py-2 text-sm"
-          onClick={() => setMobileShowEditor(false)}
-        >
-          Back to Game
-        </button>
+
+      {isMobile && !mobileShowEditor ? (
+        <div className="font-mono text-[var(--foreground)] bg-[var(--background)]">
+          <MobileGameView
+            engine={engineRef.current}
+            demos={DEMOS}
+            selectedDemo={selectedDemo}
+            onDemoChange={handleMobileDemoChange}
+            onShowEditor={() => setMobileShowEditor(true)}
+            canvasPortalRef={canvasWrapRef}
+          />
+        </div>
+      ) : (
+        <div className="flex flex-col h-screen overflow-hidden font-mono text-[var(--foreground)] bg-[var(--background)]">
+          <Header />
+          <div ref={containerRef} className="flex flex-1 min-h-0">
+            <EditorPanel
+              source={source}
+              onSourceChange={handleSourceChange}
+              language={language}
+              demos={DEMOS}
+              selectedDemo={selectedDemo}
+              onDemoChange={handleDemoChange}
+              onLoadFile={handleLoadFile}
+              style={{ width: `${editorWidth}%` }}
+            />
+            <div
+              className="divider"
+              onMouseDown={handleDividerMouseDown}
+            />
+            <DisplayPanel
+              canvasPortalRef={canvasWrapRef}
+              engine={engineRef.current}
+              scale={scale}
+              onScaleChange={handleScaleChange}
+              onFullscreen={toggleFullscreen}
+              error={error}
+              fps={status.fps}
+              onReset={handleReset}
+            />
+          </div>
+          {isMobile && (
+            <button
+              className="btn w-full py-2 text-sm"
+              onClick={() => setMobileShowEditor(false)}
+            >
+              Back to Game
+            </button>
+          )}
+          <StatusBar status={status} />
+        </div>
       )}
-      <StatusBar status={status} />
-    </div>
+    </>
   );
 }

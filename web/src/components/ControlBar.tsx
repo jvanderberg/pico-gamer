@@ -1,15 +1,17 @@
-import { RotateCcw } from "lucide-react";
+import { RotateCcw, Maximize } from "lucide-react";
 
 interface ControlBarProps {
   onReset: () => void;
   scale: number;
   onScaleChange: (scale: number) => void;
+  onFullscreen: () => void;
 }
 
 export function ControlBar({
   onReset,
   scale,
   onScaleChange,
+  onFullscreen,
 }: ControlBarProps) {
   const iconSize = 16;
   return (
@@ -30,6 +32,9 @@ export function ControlBar({
           <option value="4">4x</option>
         </select>
       </label>
+      <button className="btn" onClick={onFullscreen} title="Fullscreen">
+        <Maximize size={iconSize} />
+      </button>
     </div>
   );
 }

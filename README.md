@@ -1,6 +1,6 @@
 # Pico Gamer
 
-A handheld gaming console built from commodity through-hole modules around the Raspberry Pi Pico (RP2040). Games run on a custom stack-based bytecode VM or as native ARM binaries. A BASIC compiler and web-based emulator let you write, test, and play games in the browser.
+A handheld gaming console built from commodity through-hole modules around the Raspberry Pi Pico (RP2040). Games run on a custom stack-based bytecode VM. A BASIC compiler and web-based emulator let you write, test, and play games in the browser.
 
 **[Try the web emulator](https://jvanderberg.github.io/pico-gamer/)**
 
@@ -9,24 +9,58 @@ A handheld gaming console built from commodity through-hole modules around the R
 | Component | Module | Notes |
 |-----------|--------|-------|
 | CPU | Raspberry Pi Pico | RP2040, 125 MHz dual-core Cortex-M0+, socketed |
-| Display | SH1106 1.3" OLED | 128x64 monochrome, I2C 1 MHz, with rotary encoder |
-| Joystick | KY-023 | 2 ADC axes + digital click |
-| Audio | MAX98357A-style I2S amp | Mono speaker output via `GPIO16/17/18` |
+| Display | [SH1106 1.3 OLED + Rotary Encoder](https://www.amazon.com/1-3-inch-Display-Encoder-Interface-Projects/dp/B0GRZ7FJBQ) | 128x64 monochrome, I2C 1 MHz, with rotary encoder |
+| Joystick | [KY-023](https://www.amazon.com/Joystick-Console-Dual-Axis-Compatible-Raspberry/dp/B0D83FD3M8?th=1) | 2 ADC axes + digital click |
+| Audio | [MAX98357A I2S amp](https://www.adafruit.com/product/3006) | Mono speaker output via `GPIO16/17/18` |
 | Storage | On-board 2 MB flash | 256 KB firmware + 1.75 MB FAT12 game storage |
 | Power | USB or LiPo | Optional: TP4056 charger module |
 
+All modules are also available on AliExpress (often cheaper), but direct links are unstable.
+
 Games load via USB mass storage -- plug in, drag a `.game` file onto the drive, unplug and play.
+
+## Wiring
+
+### OLED + Encoder Module ([J1, 9-pin header](https://www.amazon.com/1-3-inch-Display-Encoder-Interface-Projects/dp/B0GRZ7FJBQ))
+
+| J1 Pin | Signal | Pico GPIO | Pico Pin |
+|--------|--------|-----------|----------|
+| 1 | +3V3 | 3V3 OUT | 36 |
+| 2 | GND | GND | 38 |
+| 3 | KEY0 | GP9 (Confirm) | 12 |
+| 4 | TRIM_B | GP7 (Encoder B) | 10 |
+| 5 | TRIM_A | GP6 (Encoder A) | 9 |
+| 6 | PUSH | GP8 (Encoder SW) | 11 |
+| 7 | IIC_SCL | GP5 | 7 |
+| 8 | IIC_SDA | GP4 | 6 |
+| 9 | KEY1 | GP10 (Back) | 14 |
+
+### [MAX98357A I2S Amp](https://www.adafruit.com/product/3006)
+
+| Amp Pin | Pico GPIO | Pico Pin | Notes |
+|---------|-----------|----------|-------|
+| VIN | VSYS | 39 | 5V power |
+| GND | GND | 38 | |
+| BCLK | GP16 | 21 | I2S bit clock |
+| LRC | GP17 | 22 | I2S word select (BCLK+1, automatic) |
+| DIN | GP18 | 24 | I2S data |
+| SD | -- | -- | Leave unconnected or tie high |
+| GAIN | -- | -- | Leave unconnected (default 9dB) |
+
+### [KY-023 Joystick](https://www.amazon.com/Joystick-Console-Dual-Axis-Compatible-Raspberry/dp/B0D83FD3M8?th=1)
+
+| Joystick Pin | Pico GPIO | Pico Pin |
+|--------------|-----------|----------|
+| VRx | GP26 (ADC0) | 31 |
+| VRy | GP27 (ADC1) | 32 |
+| +5V | 3V3 OUT | 36 |
+| GND | GND | 38 |
+
+The joystick ADC is thresholded to digital directions in firmware. The stick button (SW) is not currently wired.
 
 ## Architecture
 
 The current runtime includes a shared 6-voice synth on both web and device. On hardware, `firmware/vm-runner` outputs audio over I2S to a MAX98357A-style amp; on the web, the same command model feeds an `AudioWorklet`.
-
-### Two tiers of game support
-
-| Type | Format | Execution | Safety |
-|------|--------|-----------|--------|
-| VM bytecode | `.game` | Stack VM, ~50k instructions/frame | Sandboxed, hardware access via syscalls only |
-| Native ARM | `.bin` | Direct execution at 125 MHz | Full hardware access via BIOS jump table |
 
 ### VM
 
@@ -93,31 +127,56 @@ Options:
 
 Requires a terminal at least 128 columns wide. Audio uses `node-web-audio-api` (installed as part of `npm install` in `web/`); falls back to silent mode if unavailable.
 
-## Building
+## Getting started (hardware)
 
-### WASM VM
+### 1. Flash the firmware
 
-Required before running the web or terminal emulator. **Rebuild after any changes to C++ under `vm/lib/`.**
+Requires [PlatformIO](https://platformio.org/). Connect the Pico via USB.
 
 ```bash
-source ~/emsdk/emsdk_env.sh   # if emcc is not already on PATH
-bash wasm/build.sh
+cd firmware/vm-runner
+pio run -e pico -t upload
 ```
 
-### Web emulator
+The Pico reboots into the game launcher automatically.
+
+### 2. Compile a game
+
+Requires Node.js and the web dependencies (`cd web && npm install`).
 
 ```bash
-cd web
-npm install
-npm run dev       # start dev server
-npm run build     # production build
+npx tsx web/compile-game.ts web/examples/bouncing-dot.bas
 ```
 
-### Tests
+This produces `web/examples/bouncing-dot.game`.
+
+### 3. Load the game
+
+The Pico appears as a USB mass-storage drive. Copy the `.game` file onto it, then select it from the on-device menu.
+
+## Building (web / terminal)
+
+All commands run from the `web/` directory. Install dependencies first: `npm install`.
 
 ```bash
-cd web && npm test           # WASM + compiler/assembler tests
-cd vm && pio test -e native  # native VM unit tests
+npm run build:wasm    # build WASM VM (requires emcc on PATH)
+npm run dev           # start dev server at http://localhost:5173 (auto-builds WASM)
+npm run build         # production build (WASM + tsc + vite)
+npm test              # run tests (WASM + compiler/assembler)
+```
+
+**Rebuild WASM after any changes to C++ under `vm/lib/`.** If `emcc` is not on PATH: `source ~/emsdk/emsdk_env.sh` first.
+
+### Terminal runner
+
+```bash
+npx tsx terminal/pico-term.ts web/examples/muncher.bas
+```
+
+### Native VM tests
+
+```bash
+cd vm && pio test -e native
 ```
 
 ## Project structure

@@ -1,80 +1,88 @@
 # Pico Gamer — Current Implementation Status
 
-This file replaces the older phase-by-phase prototype plan. That earlier plan described a future Rust/Embassy/PWM architecture that is no longer the codebase reality.
-
 ## Implemented
 
 ### Core Runtime
 
 - shared C++ VM in `vm/lib/pico_vm`
-- BASIC compiler in `web/src/basic`
+- BASIC compiler in `web/src/basic` (lexer → parser → codegen → assembler)
 - assembler and `.game` build path
 - WASM build of the VM for the browser
+- CLI compiler: `web/compile-game.ts`
 
 ### Device Runner
 
 - RP2040 firmware in `firmware/vm-runner`
-- SH1106 display output
-- joystick / encoder input handling
-- USB mass-storage game loading
+- SH1106 DMA-accelerated display driver with delta updates
+- joystick (ADC → digital threshold) and rotary encoder input
+- USB mass-storage game loading (FAT12)
 - VM audio command drain into the device synth
-- I2S audio output for MAX98357A-style boards
+- I2S audio output for MAX98357A
 
 ### Web Runner
 
-- React/Vite UI
+- React/Vite UI with CodeMirror editor and inline linter
 - same VM core compiled to WASM
 - `AudioWorklet` synth sink
-- same audio command model as hardware
+- mobile-responsive game view
+- example game browser
+
+### Terminal Runner
+
+- `terminal/pico-term.ts` — runs `.bas`/`.game` files in the terminal
+- Unicode half-block character rendering (128x32)
+- keyboard input mapping (arrows, WASD, encoder keys)
+- color modes (green, amber, cyan, white)
+- audio via `node-web-audio-api` (same synth processor as web)
+
+### Sprite Engine
+
+- 32 sprite slots with automatic velocity integration
+- edge behaviors: wrap, bounce, destroy, stop
+- bitmap and vector sprite formats
+- collision detection with groups and masks
+- collision modes: detect, bounce, destroy, stop
+- hit callbacks (BASIC `CALLBACK`)
+- sprite animation with configurable frame rate
+- sprite direction (cardinal velocity from heading)
+- rotation support for vector sprites
+
+### Tilemap & Camera
+
+- tilemap rendering with animated tiles
+- tile properties (solid, etc.)
+- tile-based collision resolution
+- camera system with smooth follow, dead zone, and world bounds
+- BLIT for raw bitmap rendering
+
+### Particle System
+
+- configurable emitters (position, velocity, spread, lifetime, rate)
+- gravity support
+- per-emitter control (start, stop, clear)
 
 ### Audio
 
-- 6-voice synth on web and device
+- 6-voice synth shared across web, terminal, and device
+- pulse, saw, triangle, and noise oscillators
+- ADSR envelopes per voice
+- per-voice filter (LP, BP, HP, notch, comb)
+- per-voice drive
+- master filter on mixed output
 - custom `EFFECT` data compiled into VM memory
 - built-in SFX preset table
 - `NOTE` for pitched playback of custom effects
 - note-level vibrato
-- per-voice filters
-- per-voice drive
-- master filter
-- comb and notch filter modes
+- `SONG` sequencer for multi-voice chiptune playback
+- `TONE` for simple frequency output
 
-### Audio Prototype Harness
+### Benchmarks
 
-- `firmware/audio-proto`
-  - standalone synth demo
-  - useful for preset tuning and hardware audio validation
-
-## Current Direction
-
-The current audio direction is:
-
-1. Keep one shared synth model across web and device.
-2. Build instruments and effects with `EFFECT` and `NOTE`.
-3. Treat any future music API as a higher-level layer on top of that engine.
-
-This means the older parallel-plan ideas are retired:
-
-- no PWM-first audio plan
-- no routed shared filter model
-- no separate `SYS_MUSIC` engine as the primary path
+- `firmware/fps-bench` — standalone display performance benchmark (DMA I2C, starfield + bouncing balls, serial FPS stats)
 
 ## Active Gaps
 
-These are still reasonable next steps:
-
-- a higher-level music sequencing API built on top of `NOTE`
-- more BASIC examples using `EFFECT`, `NOTE`, `VFILTER`, and `VDRIVE`
+- more BASIC game examples
 - cleaner end-user audio docs in `BASIC-REFERENCE.md`
-- more hardware validation on the I2S amp path
+- higher-level music composition tooling
 - optional DSP expansion beyond the current filter/drive set
-
-## Rule For Future Work
-
-When extending audio, prefer:
-
-- shared data formats
-- shared syscall semantics
-- shared behavior between web and hardware
-
-Avoid introducing a second audio engine just for music. The current implementation is finally converging on one path, and the docs should stay aligned with that.
