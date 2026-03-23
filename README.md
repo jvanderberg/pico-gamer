@@ -1,8 +1,20 @@
 # Pico Gamer
 
-A handheld gaming console built from commodity through-hole modules around the Raspberry Pi Pico (RP2040). Games run on a custom stack-based bytecode VM. A BASIC compiler and web-based emulator let you write, test, and play games in the browser.
+A fantasy retro-console with real world modern hardware. Pico Gamer is built from commodity through-hole modules around the Raspberry Pi Pico (RP2040).
+Build it on a breadboard, or make your own enclosure and create a handheld gaming pad. 
+
+Games run on a custom stack-based bytecode VM. A BASIC compiler and web-based emulator let you write, test, and play games in the browser, or in a terminal.
 
 **[Try the web emulator](https://jvanderberg.github.io/pico-gamer/)**
+
+# Features
+- 128x64 1-bit graphics at 60fps
+- 6 Voice SID-inspired synthesizer
+- Sprite engine offloads sprite movement and rotation for up to 32 sprites (raster or vector)
+- Built-in particle system
+- 16 built-in sound effects, custom effects and song sequencer
+- Tile sets and virtual game field for games larger than the screen
+- Automatic pixel-perfect collision engine 
 
 ## Hardware
 
