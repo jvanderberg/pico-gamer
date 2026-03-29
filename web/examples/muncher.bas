@@ -412,11 +412,7 @@ SUB update_ghost(mg_i)
   IF gmode(mg_i) = 4 THEN
     ghome(mg_i) = ghome(mg_i) - 1
     IF ghome(mg_i) <= 0 THEN
-      IF fright_timer > 0 THEN
-        gmode(mg_i) = 2
-      ELSE
-        gmode(mg_i) = 0
-      END IF
+      gmode(mg_i) = 0
       gdir(mg_i) = DIR_UP
       ' Teleport ghost above gate
       SPR_POS gslot, 7 * 8, (6 + MAZE_ROW) * 8

@@ -290,21 +290,21 @@ SUB move_aliens()
     grid_x = grid_x + grid_dir
   END IF
 
-  ' Speed up as aliens die (faithful to original curve)
+  ' Speed up as aliens die (gradual ramp)
   IF alien_count > 45 THEN
     move_delay = 40 - level * 3
   ELSEIF alien_count > 35 THEN
+    move_delay = 36 - level * 2
+  ELSEIF alien_count > 25 THEN
     move_delay = 30 - level * 2
-  ELSEIF alien_count > 20 THEN
-    move_delay = 20 - level * 2
-  ELSEIF alien_count > 10 THEN
-    move_delay = 14 - level
-  ELSEIF alien_count > 5 THEN
-    move_delay = 8
-  ELSEIF alien_count > 2 THEN
-    move_delay = 5
+  ELSEIF alien_count > 15 THEN
+    move_delay = 22 - level
+  ELSEIF alien_count > 8 THEN
+    move_delay = 15 - level
+  ELSEIF alien_count > 3 THEN
+    move_delay = 10
   ELSE
-    move_delay = 3
+    move_delay = 5
   END IF
   IF move_delay < 3 THEN move_delay = 3
 
